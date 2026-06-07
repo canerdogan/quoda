@@ -2,10 +2,18 @@ import { Hono } from "hono";
 import { raw } from "hono/html";
 import type { Bindings } from "./types";
 import { Layout } from "./ui/layout";
+import { redirect } from "./routes/redirect";
+import { styleguide } from "./routes/styleguide";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.get("/healthz", (c) => c.json({ ok: true, service: "quoda" }));
+
+// Dynamic-QR redirect core: /r/:code (logs scan, 302 to current destination).
+app.route("/", redirect);
+
+// Design-system styleguide for visual QA (light + dark).
+app.route("/styleguide", styleguide);
 
 // Temporary Phase-1 home — replaced by the marketing page in Phase 4.
 // Demonstrates the token system is wired (accent, type scale, surfaces).

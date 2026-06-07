@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "deploy": "npm run build:tokens && npm run build:client && wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json"
   },
   "dependencies": {
     "hono": "^4.6.14",

@@ -7,3 +7,7 @@ dist/
 .remember/
 public/styles/tokens.css
 public/js/
+.workflows/
+.playwright-mcp/
+styleguide-*.png
+test-results/
