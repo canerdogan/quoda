@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": [],
+    "moduleDetection": "force"
   },
   "include": ["src/client/**/*.ts"],
   "exclude": ["node_modules"]

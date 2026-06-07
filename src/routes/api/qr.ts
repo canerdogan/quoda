@@ -1,0 +1,455 @@
+import { Hono } from "hono";
+import type { AppEnv } from "../../middleware/auth";
+import { requireAuth } from "../../middleware/auth";
+import {
+  createQr,
+  getQrById,
+  updateQr,
+  deleteQr,
+  upsertDynamicPage,
+  type QrRow,
+  type DynamicPageKind,
+} from "../../db/queries";
+import type { QrType } from "../../types";
+import type { QrDesign, QrFields } from "../../lib/qr/types";
+import { buildPayload } from "../../lib/qr/content";
+import { encodeMatrix } from "../../lib/qr/encoder";
+import { renderSvg } from "../../lib/qr/render-svg";
+import { isScannable, safePalette } from "../../lib/qr/scannability";
+import { ensureUniqueShortCode } from "../../lib/shortcode";
+import { canCreateDynamic } from "../../lib/plans";
+
+export const qrApi = new Hono<AppEnv>();
+qrApi.use("/api/qr/*", requireAuth);
+
+// ---------------------------------------------------------------------------
+// Shared validation / normalisation
+// ---------------------------------------------------------------------------
+
+const QR_TYPES: readonly QrType[] = [
+  "url", "text", "wifi", "email", "tel", "sms", "vcard",
+  "pdf", "menu", "business", "appstore", "social",
+];
+
+/** Rich types are always dynamic and host a landing page at /p/<short_code>. */
+const RICH_TYPES: readonly QrType[] = ["pdf", "menu", "business", "appstore", "social"];
+
+function isRich(type: QrType): boolean {
+  return RICH_TYPES.includes(type);
+}
+
+const MODULE_SHAPES: ReadonlyArray<QrDesign["moduleShape"]> = ["square", "dots", "rounded"];
+const EYE_STYLES: ReadonlyArray<QrDesign["eyeStyle"]> = ["square", "rounded", "circle"];
+const ECCS: ReadonlyArray<QrDesign["ecc"]> = ["L", "M", "Q", "H"];
+
+/** Brand-safe defaults so a half-filled design object never crashes the renderer. */
+const DEFAULT_DESIGN: QrDesign = {
+  fg: "#0D0D0F",
+  bg: "#FFFFFF",
+  moduleShape: "square",
+  eyeStyle: "square",
+  ecc: "M",
+};
+
+/** Coerce an arbitrary client object into a valid, fully-resolved QrDesign. */
+function normalizeDesign(input: unknown): QrDesign {
+  const d = (input ?? {}) as Record<string, unknown>;
+  const fg = typeof d.fg === "string" && /^#?[0-9a-fA-F]{3,6}$/.test(d.fg)
+    ? (d.fg.startsWith("#") ? d.fg : `#${d.fg}`)
+    : DEFAULT_DESIGN.fg;
+  const bg = typeof d.bg === "string" && /^#?[0-9a-fA-F]{3,6}$/.test(d.bg)
+    ? (d.bg.startsWith("#") ? d.bg : `#${d.bg}`)
+    : DEFAULT_DESIGN.bg;
+  const moduleShape = MODULE_SHAPES.includes(d.moduleShape as QrDesign["moduleShape"])
+    ? (d.moduleShape as QrDesign["moduleShape"])
+    : DEFAULT_DESIGN.moduleShape;
+  const eyeStyle = EYE_STYLES.includes(d.eyeStyle as QrDesign["eyeStyle"])
+    ? (d.eyeStyle as QrDesign["eyeStyle"])
+    : DEFAULT_DESIGN.eyeStyle;
+  const ecc = ECCS.includes(d.ecc as QrDesign["ecc"])
+    ? (d.ecc as QrDesign["ecc"])
+    : DEFAULT_DESIGN.ecc;
+
+  const design: QrDesign = { fg, bg, moduleShape, eyeStyle, ecc };
+  if (typeof d.logo === "string" && d.logo.length > 0) design.logo = d.logo;
+  if (typeof d.frameLabel === "string" && d.frameLabel.length > 0) {
+    design.frameLabel = d.frameLabel.slice(0, 40);
+  }
+  if (typeof d.size === "number" && d.size > 0) design.size = d.size;
+  if (typeof d.margin === "number" && d.margin >= 0) design.margin = d.margin;
+  return design;
+}
+
+/** Coerce client content into a flat string map (the QrFields contract). */
+function normalizeFields(input: unknown): QrFields {
+  const out: QrFields = {};
+  if (input && typeof input === "object") {
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      if (v == null) continue;
+      out[k] = String(v);
+    }
+  }
+  return out;
+}
+
+/**
+ * Render the static image for a type+fields+design. Throws on invalid payload
+ * (e.g. missing required field) so callers can surface a 400.
+ */
+function renderStatic(type: QrType, fields: QrFields, design: QrDesign): string {
+  const payload = buildPayload(type, fields);
+  const matrix = encodeMatrix(payload, design.ecc);
+  return renderSvg(matrix, safePalette(design));
+}
+
+/** Render the image that encodes a dynamic redirect URL (so re-targeting never reprints). */
+function renderDynamic(redirectUrl: string, design: QrDesign): string {
+  const matrix = encodeMatrix(redirectUrl, design.ecc);
+  return renderSvg(matrix, safePalette(design));
+}
+
+interface CreateBody {
+  type?: string;
+  title?: string;
+  isDynamic?: boolean;
+  destination?: string;
+  content?: Record<string, unknown>;
+  design?: Record<string, unknown>;
+  /** rich page payload (menu/business/social/appstore/pdf) */
+  page?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/qr — create
+// ---------------------------------------------------------------------------
+
+qrApi.post("/api/qr", async (c) => {
+  const user = c.get("user")!;
+  let body: CreateBody;
+  try {
+    body = await c.req.json<CreateBody>();
+  } catch {
+    return c.json({ ok: false, error: "Invalid JSON body." }, 400);
+  }
+
+  const type = body.type as QrType;
+  if (!type || !QR_TYPES.includes(type)) {
+    return c.json({ ok: false, error: "Unknown QR type." }, 400);
+  }
+
+  const title = (body.title ?? "").trim() || titleFromType(type);
+  const design = normalizeDesign(body.design);
+  const fields = normalizeFields(body.content);
+
+  // Rich types are forced dynamic; otherwise honour the toggle.
+  const rich = isRich(type);
+  const wantDynamic = rich || body.isDynamic === true;
+
+  // Plan gate for any dynamic code.
+  if (wantDynamic) {
+    const allowed = await canCreateDynamic(c.env, { id: user.id, plan_id: user.plan_id });
+    if (!allowed) {
+      return c.json(
+        {
+          ok: false,
+          error: "You've reached your plan's dynamic QR limit. Upgrade to make more permanent.",
+          code: "plan_limit",
+        },
+        402,
+      );
+    }
+  }
+
+  try {
+    if (wantDynamic) {
+      const short_code = await ensureUniqueShortCode(c.env.DB);
+      let destination: string;
+      let dynamicKind: DynamicPageKind | null = null;
+
+      if (rich) {
+        // Rich page: the redirect points at the hosted landing /p/<code>.
+        destination = `${c.env.APP_URL}/p/${short_code}`;
+        dynamicKind = type as DynamicPageKind;
+      } else {
+        // Plain dynamic: redirect to the user's target.
+        destination = normalizeUrl((body.destination ?? "").trim() || (fields.url ?? "").trim());
+        if (!destination) {
+          return c.json({ ok: false, error: "A destination URL is required for dynamic codes." }, 400);
+        }
+      }
+
+      // Validate the printed image encodes (the /r/<code> redirect).
+      renderDynamic(`${c.env.APP_URL}/r/${short_code}`, design);
+
+      const row = await createQr(c.env.DB, {
+        user_id: user.id,
+        type,
+        title,
+        is_dynamic: true,
+        short_code,
+        destination,
+        content_json: JSON.stringify(fields),
+        design_json: JSON.stringify(design),
+      });
+
+      if (rich) {
+        await upsertDynamicPage(c.env.DB, {
+          qr_id: row.id,
+          kind: dynamicKind!,
+          data_json: JSON.stringify(body.page ?? {}),
+        });
+      }
+
+      return c.json({ ok: true, qr: row }, 201);
+    }
+
+    // Static QR — validate by rendering (throws on missing required field).
+    renderStatic(type, fields, design);
+    const row = await createQr(c.env.DB, {
+      user_id: user.id,
+      type,
+      title,
+      is_dynamic: false,
+      content_json: JSON.stringify(fields),
+      design_json: JSON.stringify(design),
+    });
+    return c.json({ ok: true, qr: row }, 201);
+  } catch (err) {
+    return c.json({ ok: false, error: messageOf(err) }, 400);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/qr/:id — update (ownership enforced)
+// ---------------------------------------------------------------------------
+
+interface PatchBody {
+  title?: string;
+  destination?: string;
+  content?: Record<string, unknown>;
+  design?: Record<string, unknown>;
+  page?: Record<string, unknown>;
+}
+
+qrApi.patch("/api/qr/:id", async (c) => {
+  const user = c.get("user")!;
+  const id = c.req.param("id");
+  const qr = await getQrById(c.env.DB, id);
+  if (!qr || qr.user_id !== user.id) {
+    return c.json({ ok: false, error: "Not found." }, 404);
+  }
+
+  let body: PatchBody;
+  try {
+    body = await c.req.json<PatchBody>();
+  } catch {
+    return c.json({ ok: false, error: "Invalid JSON body." }, 400);
+  }
+
+  const patch: Record<string, string | number> = {};
+
+  if (typeof body.title === "string") {
+    const t = body.title.trim();
+    if (t) patch.title = t;
+  }
+
+  if (typeof body.design === "object" && body.design !== null) {
+    patch.design_json = JSON.stringify(normalizeDesign(body.design));
+  }
+
+  if (typeof body.content === "object" && body.content !== null) {
+    patch.content_json = JSON.stringify(normalizeFields(body.content));
+  }
+
+  // Destination is only meaningful for plain (non-rich) dynamic codes.
+  if (typeof body.destination === "string" && qr.is_dynamic === 1 && !isRich(qr.type)) {
+    const dest = normalizeUrl(body.destination.trim());
+    if (!dest) {
+      return c.json({ ok: false, error: "Destination cannot be empty." }, 400);
+    }
+    patch.destination = dest;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await updateQr(c.env.DB, id, patch);
+  }
+
+  // Rich page content lives in dynamic_pages; editing it never changes the QR image.
+  if (typeof body.page === "object" && body.page !== null && isRich(qr.type)) {
+    await upsertDynamicPage(c.env.DB, {
+      qr_id: qr.id,
+      kind: qr.type as DynamicPageKind,
+      data_json: JSON.stringify(body.page),
+    });
+  }
+
+  const updated = await getQrById(c.env.DB, id);
+  return c.json({ ok: true, qr: updated });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/qr/:id — delete (ownership enforced)
+// ---------------------------------------------------------------------------
+
+qrApi.delete("/api/qr/:id", async (c) => {
+  const user = c.get("user")!;
+  const id = c.req.param("id");
+  const qr = await getQrById(c.env.DB, id);
+  if (!qr || qr.user_id !== user.id) {
+    return c.json({ ok: false, error: "Not found." }, 404);
+  }
+  await deleteQr(c.env.DB, id);
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/qr/preview — authed live preview (no strict rate-limit)
+// ---------------------------------------------------------------------------
+
+interface PreviewBody {
+  type?: string;
+  isDynamic?: boolean;
+  content?: Record<string, unknown>;
+  design?: Record<string, unknown>;
+}
+
+qrApi.post("/api/qr/preview", async (c) => {
+  let body: PreviewBody;
+  try {
+    body = await c.req.json<PreviewBody>();
+  } catch {
+    return c.json({ ok: false, error: "Invalid JSON body." }, 400);
+  }
+
+  const type = body.type as QrType;
+  if (!type || !QR_TYPES.includes(type)) {
+    return c.json({ ok: false, error: "Unknown QR type." }, 400);
+  }
+
+  const design = normalizeDesign(body.design);
+  const fields = normalizeFields(body.content);
+  const scan = isScannable(design);
+  const rich = isRich(type);
+  const dynamic = rich || body.isDynamic === true;
+
+  try {
+    let svg: string;
+    if (dynamic) {
+      // Preview uses a stable placeholder code so the matrix looks representative.
+      svg = renderDynamic(`${c.env.APP_URL}/r/preview1`, design);
+    } else {
+      svg = renderStatic(type, fields, design);
+    }
+    return c.json({
+      ok: true,
+      svg,
+      scannable: scan.ok,
+      warn: scan.warn,
+      ratio: Math.round(scan.ratio * 100) / 100,
+    });
+  } catch (err) {
+    // A missing required field is an expected, recoverable state while typing.
+    return c.json({
+      ok: false,
+      error: messageOf(err),
+      scannable: scan.ok,
+      warn: scan.warn,
+      ratio: Math.round(scan.ratio * 100) / 100,
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/qr/:id.svg — the stored QR as a downloadable SVG image
+// ---------------------------------------------------------------------------
+
+qrApi.get("/api/qr/:id{.+\\.svg}", async (c) => {
+  const user = c.get("user")!;
+  const raw = c.req.param("id");
+  const id = raw.replace(/\.svg$/, "");
+  const qr = await getQrById(c.env.DB, id);
+  if (!qr || qr.user_id !== user.id) {
+    return c.text("Not Found", 404);
+  }
+
+  const design = parseDesign(qr.design_json);
+  let svg: string;
+  try {
+    if (qr.is_dynamic === 1 && qr.short_code) {
+      svg = renderDynamic(`${c.env.APP_URL}/r/${qr.short_code}`, design);
+    } else {
+      const fields = parseFields(qr.content_json);
+      svg = renderStatic(qr.type, fields, design);
+    }
+  } catch {
+    return c.text("Unable to render QR.", 422);
+  }
+
+  return new Response(svg, {
+    headers: {
+      "content-type": "image/svg+xml; charset=utf-8",
+      "cache-control": "no-store",
+      "content-disposition": `inline; filename="${slugify(qr.title)}.svg"`,
+    },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function parseDesign(json: string): QrDesign {
+  try {
+    return normalizeDesign(JSON.parse(json));
+  } catch {
+    return { ...DEFAULT_DESIGN };
+  }
+}
+
+function parseFields(json: string): QrFields {
+  try {
+    return normalizeFields(JSON.parse(json));
+  } catch {
+    return {};
+  }
+}
+
+/** Add an https:// scheme to a bare host so dynamic destinations always resolve. */
+function normalizeUrl(raw: string): string {
+  if (!raw) return "";
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) || /^mailto:/i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
+function titleFromType(type: QrType): string {
+  const labels: Record<QrType, string> = {
+    url: "Website link",
+    text: "Plain text",
+    wifi: "Wi-Fi network",
+    email: "Email",
+    tel: "Phone number",
+    sms: "Text message",
+    vcard: "Contact card",
+    pdf: "PDF document",
+    menu: "Menu",
+    business: "Business page",
+    appstore: "App download",
+    social: "Social links",
+  };
+  return labels[type] ?? "QR code";
+}
+
+function slugify(s: string): string {
+  return (s || "quoda-qr")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "quoda-qr";
+}
+
+function messageOf(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return "Could not build this QR code. Check the fields and try again.";
+}
+
+export type { QrRow };

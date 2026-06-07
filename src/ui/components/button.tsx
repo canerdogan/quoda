@@ -20,7 +20,8 @@ export interface ButtonProps {
   name?: string;
   value?: string;
   "aria-label"?: string;
-  "data-theme-toggle"?: boolean | "";
+  /** arbitrary data-* / aria-* hooks (e.g. islands binding via data-attributes) */
+  [key: `data-${string}`]: string | boolean | undefined;
 }
 
 /**
@@ -44,8 +45,10 @@ export const Button: FC<PropsWithChildren<ButtonProps>> = ({
   value,
   children,
   "aria-label": ariaLabel,
-  "data-theme-toggle": themeToggle,
+  ...rest
 }) => {
+  // Forward any extra data-*/aria-* attributes (island hooks) to the element.
+  const passthrough = rest as Record<string, string | boolean | undefined>;
   const classes = [
     "btn",
     `btn-${variant}`,
@@ -73,7 +76,7 @@ export const Button: FC<PropsWithChildren<ButtonProps>> = ({
         role="button"
         aria-label={ariaLabel}
         aria-disabled={disabled ? "true" : undefined}
-        data-theme-toggle={themeToggle === true ? "" : themeToggle === "" ? "" : undefined}
+        {...passthrough}
       >
         {inner}
       </a>
@@ -89,7 +92,7 @@ export const Button: FC<PropsWithChildren<ButtonProps>> = ({
       value={value}
       disabled={disabled}
       aria-label={ariaLabel}
-      data-theme-toggle={themeToggle === true ? "" : themeToggle === "" ? "" : undefined}
+      {...passthrough}
     >
       {inner}
     </button>

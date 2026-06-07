@@ -26,7 +26,10 @@ if (!entries.length) {
     outdir: outDir,
     bundle: true,
     minify: true,
-    format: "esm",
+    // IIFE so each island is self-contained: loaded as a classic <script defer>,
+    // top-level declarations stay function-scoped and never leak to / collide on
+    // the global object across islands.
+    format: "iife",
     target: "es2022",
     sourcemap: false,
   });
