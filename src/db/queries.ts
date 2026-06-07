@@ -381,3 +381,59 @@ export async function listFolders(
     .all<FolderRow>();
   return results ?? [];
 }
+
+// ---------------------------------------------------------------------------
+// Dynamic pages (hosted landings for rich QR types, served at /p/:slug)
+// ---------------------------------------------------------------------------
+
+export type DynamicPageKind = "menu" | "business" | "social" | "appstore" | "pdf";
+
+export interface DynamicPageRow {
+  qr_id: string;
+  kind: DynamicPageKind;
+  data_json: string;
+  asset_keys: string;
+}
+
+/** Create or replace the dynamic page for a QR (one page per qr_id). */
+export async function upsertDynamicPage(
+  db: D1Database,
+  input: { qr_id: string; kind: DynamicPageKind; data_json: string; asset_keys?: string },
+): Promise<DynamicPageRow> {
+  const asset_keys = input.asset_keys ?? "[]";
+  await db
+    .prepare(
+      `INSERT INTO dynamic_pages (qr_id, kind, data_json, asset_keys)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(qr_id) DO UPDATE SET kind = excluded.kind, data_json = excluded.data_json, asset_keys = excluded.asset_keys`,
+    )
+    .bind(input.qr_id, input.kind, input.data_json, asset_keys)
+    .run();
+  return { qr_id: input.qr_id, kind: input.kind, data_json: input.data_json, asset_keys };
+}
+
+/** Read a dynamic page by its owning QR id. */
+export async function getDynamicPageByQrId(
+  db: D1Database,
+  qrId: string,
+): Promise<DynamicPageRow | null> {
+  return db
+    .prepare("SELECT * FROM dynamic_pages WHERE qr_id = ? LIMIT 1")
+    .bind(qrId)
+    .first<DynamicPageRow>();
+}
+
+/**
+ * Read a dynamic page by public slug. The slug is the QR's short_code; join
+ * back to the owning QR so the page and its QR stay in sync.
+ */
+export async function getDynamicPageBySlug(
+  db: D1Database,
+  slug: string,
+): Promise<{ page: DynamicPageRow; qr: QrRow } | null> {
+  const qr = await getQrByShortCode(db, slug);
+  if (!qr) return null;
+  const page = await getDynamicPageByQrId(db, qr.id);
+  if (!page) return null;
+  return { page, qr };
+}
