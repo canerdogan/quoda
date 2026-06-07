@@ -1,0 +1,15 @@
+export interface Bindings {
+  DB: D1Database;
+  SCAN_COUNTERS: KVNamespace;
+  RATE_LIMIT: KVNamespace;
+  SESSION_CACHE: KVNamespace;
+  ASSETS_BUCKET: R2Bucket;
+  RESEND_API_KEY?: string;
+  APP_URL: string;
+}
+
+export type QrType =
+  | "url" | "text" | "wifi" | "email" | "tel" | "sms" | "vcard"
+  | "pdf" | "menu" | "business" | "appstore" | "social";
+
+export type Ecc = "L" | "M" | "Q" | "H";

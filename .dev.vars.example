@@ -1,0 +1,8 @@
+# Copy to .dev.vars for local dev (gitignored). All optional for core flows.
+
+# Email delivery for magic links. If unset, magic links are printed to the
+# Worker console with a [DEV MAGIC LINK] banner (zero-setup local auth).
+RESEND_API_KEY=
+
+# Public URL used in magic links and QR redirect targets.
+APP_URL=http://localhost:8787

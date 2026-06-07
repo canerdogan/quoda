@@ -5,3 +5,5 @@ dist/
 *.log
 .DS_Store
 .remember/
+public/styles/tokens.css
+public/js/

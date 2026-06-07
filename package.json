@@ -1,0 +1,33 @@
+{
+  "name": "quoda",
+  "version": "0.1.0",
+  "description": "Open-source, self-hostable QR platform on Cloudflare. Dynamic QR codes that never break + scan analytics.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Caner Dogan <can@canerdogan.me>",
+  "scripts": {
+    "dev": "npm run build:tokens && npm run build:client && wrangler dev",
+    "build:tokens": "node scripts/build-tokens.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "migrate:local": "wrangler d1 migrations apply DB --local",
+    "migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "deploy": "npm run build:tokens && npm run build:client && wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "qrcode-generator": "^1.4.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.8.19",
+    "@cloudflare/workers-types": "^4.20241218.0",
+    "@playwright/test": "^1.49.1",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2",
+    "vitest": "2.1.8",
+    "wrangler": "4.12.1"
+  }
+}
