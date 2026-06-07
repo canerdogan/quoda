@@ -89,9 +89,14 @@ uploadApi.post("/api/upload", async (c) => {
   const ext = EXT_BY_TYPE[contentType] ?? "bin";
   const key = `logos/${user.id}/${crypto.randomUUID()}.${ext}`;
 
-  await c.env.ASSETS_BUCKET.put(key, bytes, {
-    httpMetadata: { contentType },
-  });
+  try {
+    await c.env.ASSETS_BUCKET.put(key, bytes, {
+      httpMetadata: { contentType },
+    });
+  } catch (err) {
+    console.error("[upload] R2 put failed:", err);
+    return c.json({ ok: false, error: "Upload failed. Please try again." }, 500);
+  }
 
   return c.json({ ok: true, key, url: `/assets/${key}` }, 201);
 });

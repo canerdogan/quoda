@@ -361,6 +361,7 @@ onboarding.post("/onboarding/complete", async (c) => {
 
   let qrId: string;
 
+  try {
   if (RICH_KINDS.has(type)) {
     // Rich hosted page: always dynamic. The printed QR encodes /r/<code> which
     // 302s to /p/<code>; destination is the hosted landing.
@@ -430,6 +431,27 @@ onboarding.post("/onboarding/complete", async (c) => {
   }
 
   await setOnboarded(c.env.DB, user.id, now);
+  } catch (err) {
+    console.error(err);
+    return c.html(
+      <AppShell user={user} title="Get started" active="new">
+        <div class="ob" data-onboarding>
+          <header class="ob-head">
+            <h1 class="ob-title t-display-lg">Something went wrong.</h1>
+            <p class="ob-lede t-body-lg text-secondary">
+              We couldn't create your QR — please try again.
+            </p>
+          </header>
+          <div class="ob-nav">
+            <Button href="/onboarding" variant="primary">
+              Back to start
+            </Button>
+          </div>
+        </div>
+      </AppShell>,
+      500,
+    );
+  }
   return c.redirect(`/app/${qrId}`, 302);
 });
 

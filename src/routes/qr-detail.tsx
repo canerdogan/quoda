@@ -66,9 +66,10 @@ interface DetailViewProps {
   topDevice: { name: string; count: number } | null;
   qrSvg: string;
   printedUrl: string | null;
+  analyticsError?: boolean;
 }
 
-const DetailView: FC<DetailViewProps> = ({ qr, total, topCountry, topDevice, qrSvg, printedUrl }) => {
+const DetailView: FC<DetailViewProps> = ({ qr, total, topCountry, topDevice, qrSvg, printedUrl, analyticsError }) => {
   const dynamic = qr.is_dynamic === 1;
   return (
     <div class="qr-detail" data-qr-id={qr.id} data-dynamic={dynamic ? "true" : "false"}>
@@ -140,6 +141,12 @@ const DetailView: FC<DetailViewProps> = ({ qr, total, topCountry, topDevice, qrS
         {/* Right: analytics */}
         <section class="qr-detail-analytics stack" aria-labelledby="qd-analytics">
           <h2 class="t-heading-sm visually-hidden" id="qd-analytics">Analytics</h2>
+
+          {analyticsError ? (
+            <p class="t-body-sm text-secondary" role="status">
+              Couldn't load analytics — please refresh to try again.
+            </p>
+          ) : null}
 
           <div class="qr-detail-stats">
             <Stat label="Total scans" value={String(total)} icon={<Icon name="chart" size={18} />} />
@@ -213,13 +220,26 @@ qrDetail.get("/app/:id", async (c) => {
   }
 
   const design = { ...DEFAULT_DESIGN, ...safeJson<Partial<QrDesign>>(qr.design_json, {}) } as QrDesign;
-  const [total, breakdown] = await Promise.all([
-    getTotals(c.env, id),
-    getBreakdown(c.env, id),
-  ]);
 
-  const topCountry = topEntry(breakdown.country);
-  const topDevice = topEntry(breakdown.device);
+  // Analytics are best-effort: if the fast counters / breakdown read fails we
+  // still render the QR details with zeroed analytics and an inline note.
+  let total = 0;
+  let topCountry: { name: string; count: number } | null = null;
+  let topDevice: { name: string; count: number } | null = null;
+  let analyticsError = false;
+  try {
+    const [t, breakdown] = await Promise.all([
+      getTotals(c.env, id),
+      getBreakdown(c.env, id),
+    ]);
+    total = t;
+    topCountry = topEntry(breakdown.country);
+    topDevice = topEntry(breakdown.device);
+  } catch (err) {
+    console.error(err);
+    analyticsError = true;
+  }
+
   const qrSvg = renderQrImage(qr, design, c.env.APP_URL);
   const printedUrl = qr.is_dynamic === 1 && qr.short_code ? `${c.env.APP_URL}/r/${qr.short_code}` : null;
 
@@ -232,6 +252,7 @@ qrDetail.get("/app/:id", async (c) => {
         topDevice={topDevice}
         qrSvg={qrSvg}
         printedUrl={printedUrl}
+        analyticsError={analyticsError}
       />
       <script src="/js/charts.js" defer></script>
     </AppShell>,

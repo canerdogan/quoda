@@ -93,45 +93,49 @@ export async function getUserFromRequest(
   const now = Date.now();
   let userId: string | null = null;
 
-  // Fast path: KV cache.
-  const cachedRaw = await env.SESSION_CACHE.get(cacheKey(sessionId));
-  if (cachedRaw) {
-    try {
+  // Fast path: KV cache. A cache read failure is non-fatal — fall through to D1.
+  try {
+    const cachedRaw = await env.SESSION_CACHE.get(cacheKey(sessionId));
+    if (cachedRaw) {
       const cached = JSON.parse(cachedRaw) as CachedSession;
       if (cached.expiresAt > now) {
         userId = cached.userId;
       } else {
-        // Stale cache entry — drop it.
-        await env.SESSION_CACHE.delete(cacheKey(sessionId));
+        await env.SESSION_CACHE.delete(cacheKey(sessionId)).catch(() => {});
       }
-    } catch {
-      await env.SESSION_CACHE.delete(cacheKey(sessionId));
     }
+  } catch {
+    // Corrupt cache entry or transient KV error — ignore and use D1.
   }
 
-  // Slow path: D1.
-  if (!userId) {
-    const row = await getSessionRow(env.DB, sessionId);
-    if (!row) return null;
-    if (row.expires_at <= now) return null;
-    userId = row.user_id;
-    // Repopulate cache for subsequent reads.
-    const ttl = Math.max(1, Math.floor((row.expires_at - now) / 1000));
-    await env.SESSION_CACHE.put(
-      cacheKey(sessionId),
-      JSON.stringify({ userId, expiresAt: row.expires_at } satisfies CachedSession),
-      { expirationTtl: ttl },
-    );
-  }
+  // Slow path: D1. A storage failure here means we cannot verify the session;
+  // treat as unauthenticated rather than throwing a 500 on every request.
+  try {
+    if (!userId) {
+      const row = await getSessionRow(env.DB, sessionId);
+      if (!row) return null;
+      if (row.expires_at <= now) return null;
+      userId = row.user_id;
+      const ttl = Math.max(1, Math.floor((row.expires_at - now) / 1000));
+      await env.SESSION_CACHE.put(
+        cacheKey(sessionId),
+        JSON.stringify({ userId, expiresAt: row.expires_at } satisfies CachedSession),
+        { expirationTtl: ttl },
+      ).catch(() => {});
+    }
 
-  const user = await getUserById(env.DB, userId);
-  if (!user) return null;
-  return {
-    id: user.id,
-    email: user.email,
-    plan_id: user.plan_id,
-    onboarded_at: user.onboarded_at,
-  };
+    const user = await getUserById(env.DB, userId);
+    if (!user) return null;
+    return {
+      id: user.id,
+      email: user.email,
+      plan_id: user.plan_id,
+      onboarded_at: user.onboarded_at,
+    };
+  } catch (err) {
+    console.error("[session] lookup failed:", err);
+    return null;
+  }
 }
 
 /**

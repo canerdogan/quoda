@@ -20,11 +20,16 @@ analyticsApi.get("/api/qr/:id/analytics", async (c) => {
   const daysParam = Number(c.req.query("days"));
   const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 365) : 30;
 
-  const [total, daily, breakdown] = await Promise.all([
-    getTotals(c.env, id),
-    getDaily(c.env, id, days),
-    getBreakdown(c.env, id),
-  ]);
+  try {
+    const [total, daily, breakdown] = await Promise.all([
+      getTotals(c.env, id),
+      getDaily(c.env, id, days),
+      getBreakdown(c.env, id),
+    ]);
 
-  return c.json({ ok: true, total, daily, breakdown });
+    return c.json({ ok: true, total, daily, breakdown });
+  } catch (err) {
+    console.error(err);
+    return c.json({ ok: false, error: "Could not load analytics." }, 500);
+  }
 });

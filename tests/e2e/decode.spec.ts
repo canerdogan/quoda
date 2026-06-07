@@ -86,6 +86,28 @@ test.describe("QR scannability — generated codes actually decode", () => {
     expect(await decodeSvg(page, svg)).toBe(url);
   });
 
+  test("logo overlay still decodes (logo forces ECC=H)", async ({ page }) => {
+    // A tiny inline SVG logo. Even on a short payload (small version), the
+    // server forces ECC=H when a logo is present so the knockout is recoverable.
+    const logo =
+      "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2010%2010'%3E%3Crect%20width='10'%20height='10'%20fill='%230A7EA4'/%3E%3C/svg%3E";
+    const svg = await previewSvg(page, {
+      type: "url",
+      fields: { url },
+      design: { logo, ecc: "L" }, // request L; server must upgrade to H
+    });
+    expect(await decodeSvg(page, svg)).toBe(url);
+  });
+
+  test("margin below the ISO quiet zone is clamped (still decodes)", async ({ page }) => {
+    const svg = await previewSvg(page, {
+      type: "url",
+      fields: { url },
+      design: { margin: 0 },
+    });
+    expect(await decodeSvg(page, svg)).toBe(url);
+  });
+
   test("wifi payload decodes to the canonical WIFI string", async ({ page }) => {
     const svg = await previewSvg(page, {
       type: "wifi",

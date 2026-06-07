@@ -136,15 +136,33 @@ const SEARCH_FILTER = `(function(){
 dashboard.get("/app", async (c) => {
   const user = c.get("user")!;
 
-  const [qrs, folders] = await Promise.all([
-    listQrByUser(c.env.DB, user.id),
-    listFolders(c.env.DB, user.id),
-  ]);
+  let qrs: QrRow[];
+  let folders: FolderRow[];
+  let withScans: QrWithScans[];
+  try {
+    [qrs, folders] = await Promise.all([
+      listQrByUser(c.env.DB, user.id),
+      listFolders(c.env.DB, user.id),
+    ]);
 
-  // Live scan totals from the KV fast counters, in parallel.
-  const withScans: QrWithScans[] = await Promise.all(
-    qrs.map(async (qr) => ({ ...qr, scans: await getTotals(c.env, qr.id) })),
-  );
+    // Live scan totals from the KV fast counters, in parallel.
+    withScans = await Promise.all(
+      qrs.map(async (qr) => ({ ...qr, scans: await getTotals(c.env, qr.id) })),
+    );
+  } catch (err) {
+    console.error(err);
+    return c.html(
+      <AppShell user={user} title="Dashboard" active="dashboard">
+        <div class="dash-empty">
+          <h2 class="dash-empty-title t-heading-sm">Couldn't load your codes</h2>
+          <p class="dash-empty-text t-body text-secondary">
+            Something went wrong loading your dashboard. Please refresh.
+          </p>
+        </div>
+      </AppShell>,
+      500,
+    );
+  }
 
   // Group by folder for display. "Ungrouped" collects folder-less codes.
   const folderById = new Map<string, FolderRow>(folders.map((f) => [f.id, f]));

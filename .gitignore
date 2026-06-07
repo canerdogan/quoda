@@ -11,3 +11,4 @@ public/js/
 .playwright-mcp/
 styleguide-*.png
 test-results/
+/*.png

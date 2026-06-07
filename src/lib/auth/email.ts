@@ -45,19 +45,27 @@ export async function sendMagicLink(
     return;
   }
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: FROM,
-      to: [email],
-      subject: SUBJECT,
-      html: magicLinkHtml(url),
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: FROM,
+        to: [email],
+        subject: SUBJECT,
+        html: magicLinkHtml(url),
+      }),
+    });
+  } catch (err) {
+    // Network/transport failure — surface it (never silent) so the caller can
+    // tell the user the email couldn't be sent.
+    console.error("[email] sendMagicLink network error:", err);
+    throw new Error("sendMagicLink: could not reach the email provider.");
+  }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");

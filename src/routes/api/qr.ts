@@ -71,13 +71,112 @@ function normalizeDesign(input: unknown): QrDesign {
     : DEFAULT_DESIGN.ecc;
 
   const design: QrDesign = { fg, bg, moduleShape, eyeStyle, ecc };
-  if (typeof d.logo === "string" && d.logo.length > 0) design.logo = d.logo;
+  if (typeof d.logo === "string" && d.logo.length > 0) {
+    design.logo = d.logo;
+    // A centered logo knocks out ~22% of modules — force max error correction
+    // so the code still decodes regardless of the requested ECC level.
+    design.ecc = "H";
+  }
   if (typeof d.frameLabel === "string" && d.frameLabel.length > 0) {
     design.frameLabel = d.frameLabel.slice(0, 40);
   }
   if (typeof d.size === "number" && d.size > 0) design.size = d.size;
-  if (typeof d.margin === "number" && d.margin >= 0) design.margin = d.margin;
+  // Clamp to the 4-module ISO quiet zone minimum (never below).
+  design.margin = Math.max(4, typeof d.margin === "number" ? d.margin : 4);
   return design;
+}
+
+/**
+ * Convert the studio's flat form fields into the STRUCTURED shape the hosted
+ * landing pages (routes/pages.tsx) expect. The studio sends raw text fields
+ * (e.g. a "Name | Price" textarea); pages.tsx renders sections[]/links[]/etc.
+ * Without this transform the rich pages render empty.
+ */
+function normalizePageData(kind: DynamicPageKind, raw: unknown): Record<string, unknown> {
+  const f = normalizeFields(raw);
+  switch (kind) {
+    case "menu":
+      return {
+        title: f.name || undefined,
+        subtitle: f.tagline || undefined,
+        currency: f.currency || undefined,
+        sections: parseMenuSections(f.items ?? ""),
+      };
+    case "social":
+      return {
+        name: f.name || undefined,
+        bio: f.bio || undefined,
+        avatar: f.avatar || undefined,
+        links: parseLabeledLinks(f.links ?? ""),
+      };
+    case "business":
+      return {
+        name: f.name || undefined,
+        title: f.title || undefined,
+        company: f.company || undefined,
+        bio: f.bio || f.tagline || undefined,
+        phone: f.phone || undefined,
+        email: f.email || undefined,
+        website: f.website ? normalizeUrl(f.website) : undefined,
+        address: f.address || undefined,
+        mapUrl: f.mapUrl || undefined,
+      };
+    case "appstore":
+      return {
+        appName: f.appName || f.name || undefined,
+        tagline: f.tagline || undefined,
+        icon: f.icon || undefined,
+        iosUrl: f.iosUrl || undefined,
+        androidUrl: f.androidUrl || undefined,
+        fallbackUrl: f.fallbackUrl ? normalizeUrl(f.fallbackUrl) : undefined,
+      };
+    case "pdf":
+      return {
+        title: f.title || undefined,
+        description: f.description || undefined,
+        fileUrl: f.fileUrl || undefined,
+        fileName: f.fileName || undefined,
+      };
+    default:
+      return f;
+  }
+}
+
+/**
+ * Parse a menu textarea into sections. A line with "|" is "Name | Price"
+ * (optionally "Name | Price | Description"); a line without "|" starts a new
+ * named section. This supports both a flat list and a sectioned menu.
+ */
+function parseMenuSections(text: string): Array<{ title?: string; items: Array<{ name: string; price?: string; description?: string }> }> {
+  const sections: Array<{ title?: string; items: Array<{ name: string; price?: string; description?: string }> }> = [];
+  let current: { title?: string; items: Array<{ name: string; price?: string; description?: string }> } = { items: [] };
+  for (const lineRaw of text.split("\n")) {
+    const line = lineRaw.trim();
+    if (!line) continue;
+    if (line.includes("|")) {
+      const [name, price, description] = line.split("|").map((s) => s.trim());
+      if (name) current.items.push({ name, ...(price ? { price } : {}), ...(description ? { description } : {}) });
+    } else {
+      // A bare line is a section heading; flush the current section first.
+      if (current.items.length || current.title) sections.push(current);
+      current = { title: line, items: [] };
+    }
+  }
+  if (current.items.length || current.title) sections.push(current);
+  return sections;
+}
+
+/** Parse a "Label | URL" (one per line) textarea into link objects. */
+function parseLabeledLinks(text: string): Array<{ label: string; url: string }> {
+  const links: Array<{ label: string; url: string }> = [];
+  for (const lineRaw of text.split("\n")) {
+    const line = lineRaw.trim();
+    if (!line) continue;
+    const parts = line.split("|").map((s) => s.trim());
+    const [label, url] = parts.length >= 2 ? parts : [parts[0], parts[0]];
+    if (url) links.push({ label: label || url, url: normalizeUrl(url) });
+  }
+  return links;
 }
 
 /** Coerce client content into a flat string map (the QrFields contract). */
@@ -193,10 +292,12 @@ qrApi.post("/api/qr", async (c) => {
       });
 
       if (rich) {
+        // Use the rich form's own content fields when no explicit page payload
+        // is sent, and normalize either into the structured page shape.
         await upsertDynamicPage(c.env.DB, {
           qr_id: row.id,
           kind: dynamicKind!,
-          data_json: JSON.stringify(body.page ?? {}),
+          data_json: JSON.stringify(normalizePageData(dynamicKind!, body.page ?? fields)),
         });
       }
 
@@ -279,7 +380,7 @@ qrApi.patch("/api/qr/:id", async (c) => {
     await upsertDynamicPage(c.env.DB, {
       qr_id: qr.id,
       kind: qr.type as DynamicPageKind,
-      data_json: JSON.stringify(body.page),
+      data_json: JSON.stringify(normalizePageData(qr.type as DynamicPageKind, body.page)),
     });
   }
 
@@ -314,6 +415,9 @@ interface PreviewBody {
 }
 
 qrApi.post("/api/qr/preview", async (c) => {
+  // Auth is enforced by qrApi.use("/api/qr/*", requireAuth); read the user to
+  // make that explicit (and to keep parity with the other handlers).
+  c.get("user");
   let body: PreviewBody;
   try {
     body = await c.req.json<PreviewBody>();

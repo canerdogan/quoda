@@ -33,45 +33,52 @@ export async function logScan(
   qr: { id: string },
   request: Request,
 ): Promise<void> {
-  const cf = (request as Request & { cf?: CfLike }).cf;
-  const country = cf?.country ?? null;
-  const city = cf?.city ?? null;
-  const device = deviceFromUA(request.headers.get("user-agent"));
-  const referer =
-    request.headers.get("referer") ?? request.headers.get("referrer") ?? null;
-  const ts = Date.now();
-  const day = utcDay(ts);
+  // Analytics is best-effort and runs inside ctx.waitUntil — a transient KV/D1
+  // failure must NEVER surface or break the redirect (the "never breaks"
+  // promise). Swallow and log; the scan total may be off by one, that's all.
+  try {
+    const cf = (request as Request & { cf?: CfLike }).cf;
+    const country = cf?.country ?? null;
+    const city = cf?.city ?? null;
+    const device = deviceFromUA(request.headers.get("user-agent"));
+    const referer =
+      request.headers.get("referer") ?? request.headers.get("referrer") ?? null;
+    const ts = Date.now();
+    const day = utcDay(ts);
 
-  const totalKey = `qr:${qr.id}:total`;
-  const dayKey = `qr:${qr.id}:${day}`;
+    const totalKey = `qr:${qr.id}:total`;
+    const dayKey = `qr:${qr.id}:${day}`;
 
-  // KV counters: read-modify-write (KV has no atomic increment).
-  const [curTotal, curDay] = await Promise.all([
-    env.SCAN_COUNTERS.get(totalKey),
-    env.SCAN_COUNTERS.get(dayKey),
-  ]);
-  await Promise.all([
-    env.SCAN_COUNTERS.put(totalKey, String((Number(curTotal) || 0) + 1)),
-    env.SCAN_COUNTERS.put(dayKey, String((Number(curDay) || 0) + 1)),
-  ]);
+    // KV counters: read-modify-write (KV has no atomic increment).
+    const [curTotal, curDay] = await Promise.all([
+      env.SCAN_COUNTERS.get(totalKey),
+      env.SCAN_COUNTERS.get(dayKey),
+    ]);
+    await Promise.all([
+      env.SCAN_COUNTERS.put(totalKey, String((Number(curTotal) || 0) + 1)),
+      env.SCAN_COUNTERS.put(dayKey, String((Number(curDay) || 0) + 1)),
+    ]);
 
-  // Raw scan row.
-  await env.DB.prepare(
-    "INSERT INTO scans (id, qr_id, ts, country, city, device, referer) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  )
-    .bind(crypto.randomUUID(), qr.id, ts, country, city, device, referer)
-    .run();
+    // Raw scan row.
+    await env.DB.prepare(
+      "INSERT INTO scans (id, qr_id, ts, country, city, device, referer) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    )
+      .bind(crypto.randomUUID(), qr.id, ts, country, city, device, referer)
+      .run();
 
-  // Daily aggregate. country is part of the PK and can be NULL; SQLite treats
-  // NULL as distinct in UNIQUE/PK, so we coalesce to '' for stable upserts.
-  await env.DB.prepare(
-    `INSERT INTO scan_daily (qr_id, day, country, device, count)
-       VALUES (?, ?, ?, ?, 1)
-     ON CONFLICT(qr_id, day, country, device)
-       DO UPDATE SET count = count + 1`,
-  )
-    .bind(qr.id, day, country ?? "", device)
-    .run();
+    // Daily aggregate. country is part of the PK and can be NULL; SQLite treats
+    // NULL as distinct in UNIQUE/PK, so we coalesce to '' for stable upserts.
+    await env.DB.prepare(
+      `INSERT INTO scan_daily (qr_id, day, country, device, count)
+         VALUES (?, ?, ?, ?, 1)
+       ON CONFLICT(qr_id, day, country, device)
+         DO UPDATE SET count = count + 1`,
+    )
+      .bind(qr.id, day, country ?? "", device)
+      .run();
+  } catch (err) {
+    console.error(`[analytics] logScan failed for qr ${qr.id}:`, err);
+  }
 }
 
 /** Total scans for a QR (from the KV fast counter). */

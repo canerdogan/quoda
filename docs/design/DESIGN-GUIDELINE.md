@@ -118,7 +118,7 @@ Buttons carry no resting shadow — only focus ring.
 1. **Live generator is the hero.** URL input + QR preview are the primary composition. Works before signup. Real-time on keystroke. Input labeled, `role=form`, `aria-label`; preview region `aria-live=polite`. CTA "Make it permanent" appears only after typing.
 2. **QR scannability overrides theme.** Preview card always dark modules on white, `color-scheme: light`, forced white bg, ≥15:1 contrast. Mandatory code comment: `/* QR scannability absolute: dark modules on white always — do not remove for theme consistency. */`
 3. **One accent, one viewport.** `--color-accent` once, on the single highest-priority interactive element. Focus ring `outline: 2px solid var(--color-accent); outline-offset: 3px` on every interactive element, no aesthetic overrides.
-4. **Token-first, zero raw hex.** Every color references a CSS custom property. Raw hex = broken component (build-time lint error).
+4. **Token-first, zero raw hex.** Every color references a CSS custom property. Raw hex = broken component (build-time lint error). **Documented exceptions** (raw hex is correct, because the output is an exported/standalone asset, not themeable UI chrome): the QR SVG render output (`src/lib/qr/render-svg.ts`), the scannability safe-palette constants (`scannability.ts`), the QR-preview forced `color-scheme: light`, the magic-link **email HTML** (mail clients strip CSS custom properties), the **brand favicon** SVG in `src/index.tsx` (a standalone icon asset), `scripts/build-tokens.mjs`, and the generated `tokens.css` itself.
 
 ## Accessibility Rules (shipping gates, not audits)
 

@@ -83,16 +83,20 @@ function toFields(input: unknown): QrFields {
 function resolveDesign(input: unknown): QrDesign {
   if (!input || typeof input !== "object") return { ...DEFAULT_DESIGN };
   const d = input as Partial<QrDesign>;
+  const logo = typeof d.logo === "string" ? d.logo : undefined;
   return {
     fg: typeof d.fg === "string" ? d.fg : DEFAULT_DESIGN.fg,
     bg: typeof d.bg === "string" ? d.bg : DEFAULT_DESIGN.bg,
     moduleShape: d.moduleShape ?? DEFAULT_DESIGN.moduleShape,
     eyeStyle: d.eyeStyle ?? DEFAULT_DESIGN.eyeStyle,
-    ecc: d.ecc ?? DEFAULT_DESIGN.ecc,
-    logo: typeof d.logo === "string" ? d.logo : undefined,
+    // A centered logo knocks out ~22% of modules; force max error correction so
+    // the code still decodes. Otherwise honour the requested level.
+    ecc: logo ? "H" : (d.ecc ?? DEFAULT_DESIGN.ecc),
+    logo,
     frameLabel: typeof d.frameLabel === "string" ? d.frameLabel : undefined,
     size: typeof d.size === "number" ? d.size : undefined,
-    margin: typeof d.margin === "number" ? d.margin : DEFAULT_DESIGN.margin,
+    // Never below the 4-module ISO quiet zone.
+    margin: Math.max(4, typeof d.margin === "number" ? d.margin : DEFAULT_DESIGN.margin ?? 4),
   };
 }
 
