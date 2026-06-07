@@ -118,7 +118,9 @@ function moduleGlyph(
 ): string {
   switch (shape) {
     case "dots":
-      return `<circle cx="${fmt(x + 0.5)}" cy="${fmt(y + 0.5)}" r="0.42" fill="${esc(fg)}"/>`;
+      // r=0.5 keeps adjacent modules tangent so timing/data runs stay continuous
+      // enough to decode reliably, while preserving the dotted aesthetic.
+      return `<circle cx="${fmt(x + 0.5)}" cy="${fmt(y + 0.5)}" r="0.5" fill="${esc(fg)}"/>`;
     case "rounded":
       return `<rect x="${x}" y="${y}" width="1" height="1" rx="0.3" fill="${esc(fg)}"/>`;
     case "square":

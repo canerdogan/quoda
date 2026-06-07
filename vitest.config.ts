@@ -11,6 +11,8 @@ export default defineWorkersConfig(async () => {
   const migrations = await readD1Migrations(path.join(dir, "migrations"));
   return {
     test: {
+      // Playwright specs live in tests/e2e and run via `npm run test:e2e`.
+      exclude: ["**/node_modules/**", "tests/e2e/**"],
       setupFiles: ["./tests/apply-migrations.ts"],
       poolOptions: {
         workers: {
