@@ -1585,6 +1585,21 @@
   text-align: center;
 }
 
+/* Brand Match action under the URL field. */
+.generator-brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.generator-brand[hidden] {
+  display: none;
+}
+.generator-brand-note {
+  margin: 0;
+  min-height: 1.2em;
+  text-align: center;
+}
+
 /* ----------------------------------------------------- Marketing sections */
 
 .section {
@@ -2488,6 +2503,16 @@
 }
 
 /* Customization grid */
+.studio-brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-bottom: var(--space-24);
+}
+.studio-brand-note {
+  margin: 0;
+  text-align: center;
+}
 .studio-design-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

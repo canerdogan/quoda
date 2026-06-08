@@ -30,5 +30,6 @@
   ],
   "r2_buckets": [
     { "binding": "ASSETS_BUCKET", "bucket_name": "quoda-assets" }
-  ]
+  ],
+  "ai": { "binding": "AI" }
 }

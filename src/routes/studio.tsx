@@ -327,6 +327,16 @@ const StudioView: FC<StudioViewProps> = ({ mode, activeType, fields, design, isD
           {/* Customization */}
           <section class="studio-panel" aria-labelledby="sp-design">
             <h2 class="t-heading-sm studio-panel-title" id="sp-design">Customize</h2>
+            {/* Brand Match — AI styles the code to the destination's brand. */}
+            <div class="studio-brand">
+              <button type="button" class="btn btn-secondary btn-block" id="studio-brand" data-brand>
+                <span class="btn-icon" aria-hidden="true"><Icon name="sparkles" /></span>
+                <span class="btn-label">Brand it with AI</span>
+              </button>
+              <p class="studio-brand-note t-caption text-tertiary" id="studio-brand-note" role="status" aria-live="polite">
+                Pulls colors + logo from your destination URL.
+              </p>
+            </div>
             <div class="studio-design-grid">
               <div class="field">
                 <label class="field-label" for="d-fg">Foreground</label>

@@ -183,6 +183,61 @@ function init(): void {
     }
   });
 
+  // -- Brand Match ---------------------------------------------------------
+  const brandBtn = root.querySelector<HTMLButtonElement>("#studio-brand");
+  const brandNote = root.querySelector<HTMLElement>("#studio-brand-note");
+  if (brandBtn) {
+    brandBtn.addEventListener("click", async () => {
+      const urlField =
+        root!.querySelector<HTMLInputElement>(
+          `[data-fields-for="${activeType}"] [data-field="url"]`,
+        ) ?? root!.querySelector<HTMLInputElement>('[data-field="url"]');
+      const url = (urlField?.value || "").trim();
+      if (!url) {
+        if (brandNote) brandNote.textContent = "Add a destination URL first, then Brand it.";
+        return;
+      }
+      brandBtn.disabled = true;
+      if (brandNote) brandNote.textContent = "Matching your brand…";
+      try {
+        const res = await fetch("/api/brand", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          design?: QrDesign;
+          logoDataUrl?: string | null;
+          title?: string;
+          source?: string;
+        };
+        if (!res.ok || !data.ok || !data.design) {
+          if (brandNote) brandNote.textContent = "Couldn't read that site's brand — try another URL.";
+          return;
+        }
+        const d = data.design;
+        const set = (key: string, val: string | undefined) => {
+          if (val == null) return;
+          const el = root!.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-design="${key}"]`);
+          if (el) el.value = val;
+        };
+        set("fg", d.fg);
+        set("bg", d.bg);
+        set("moduleShape", d.moduleShape);
+        set("eyeStyle", d.eyeStyle);
+        set("ecc", d.ecc);
+        if (logoHidden) logoHidden.value = data.logoDataUrl || "";
+        refreshPreview();
+        if (brandNote) brandNote.textContent = `Matched to ${data.title || data.source || "your site"}.`;
+      } catch {
+        if (brandNote) brandNote.textContent = "Couldn't reach Brand Match. Check your connection.";
+      } finally {
+        brandBtn.disabled = false;
+      }
+    });
+  }
+
   // -- logo upload ---------------------------------------------------------
   if (logoInput) {
     logoInput.addEventListener("change", async () => {

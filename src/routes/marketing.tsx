@@ -133,6 +133,16 @@ marketing.get("/", (c) =>
               placeholder="yoursite.com"
               hint="Start typing — your code appears instantly."
             />
+            {/* Brand Match — AI styles the code to the destination's brand. */}
+            <div class="generator-brand" id="gen-brand-wrap" hidden aria-hidden="true">
+              <button type="button" class="btn btn-secondary btn-block" id="gen-brand" data-brand>
+                <span class="btn-icon" aria-hidden="true">
+                  <Icon name="sparkles" />
+                </span>
+                <span class="btn-label">Brand it with AI</span>
+              </button>
+              <p class="generator-brand-note t-caption text-tertiary" id="gen-brand-note" role="status" aria-live="polite"></p>
+            </div>
             {/* CTA is hidden until the user types (toggled by the island). */}
             <div class="generator-cta" id="gen-cta" hidden aria-hidden="true">
               <Button variant="primary" size="lg" href="/login" block>
