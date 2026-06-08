@@ -4,25 +4,29 @@
   "main": "src/index.tsx",
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "fea3602912f3939a9c3d8bc45c6b7829",
   "observability": { "enabled": true },
   "assets": {
     "directory": "./public"
   },
   "vars": {
-    "APP_URL": "http://localhost:8787"
+    "APP_URL": "https://quoda.codebyte.dev"
   },
+  "routes": [
+    { "pattern": "quoda.codebyte.dev", "custom_domain": true }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "quoda",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "8a09d1ea-9f16-44cd-985a-28f7ebf6bf60",
       "migrations_dir": "migrations"
     }
   ],
   "kv_namespaces": [
-    { "binding": "SCAN_COUNTERS", "id": "scan_counters_local" },
-    { "binding": "RATE_LIMIT", "id": "rate_limit_local" },
-    { "binding": "SESSION_CACHE", "id": "session_cache_local" }
+    { "binding": "SCAN_COUNTERS", "id": "8653f3fe360e45c3849a7f09a3ddfa67" },
+    { "binding": "RATE_LIMIT", "id": "ef8c00c97d8448da859882f941c2a851" },
+    { "binding": "SESSION_CACHE", "id": "b95ee80e13da4fa1aca067f725c44208" }
   ],
   "r2_buckets": [
     { "binding": "ASSETS_BUCKET", "bucket_name": "quoda-assets" }
