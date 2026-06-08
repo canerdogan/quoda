@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Each phase ends in a GATE that must pass before the next phase starts.
 
-**Goal:** Build Quoda — an open-source, Cloudflare-native, feature-complete qr.io clone (static + dynamic QR, full customization, scan analytics, magic-link auth, premium UI) that runs 100% locally with `wrangler dev`.
+**Goal:** Build Quoda — an open-source, Cloudflare-native QR platform (static + dynamic QR, full customization, scan analytics, magic-link auth, premium UI) that runs 100% locally with `wrangler dev`.
 
 **Architecture:** One Hono Worker. JSX SSR for pages, dependency-free vanilla-TS islands for interactivity. D1 (SQL), KV (counters/rate-limit/session), R2 (exports/logos/assets). Dynamic QR = `/r/:code` redirect logging scans then 302 to the current destination.
 
@@ -67,7 +67,7 @@ quoda/
 **Files:** Create `package.json`, `tsconfig.json`, `wrangler.toml`, `LICENSE`, `.dev.vars.example`, `.gitignore` (exists).
 - [ ] `npm init`; add deps: `hono`, `qrcode-generator`; devDeps: `wrangler`, `typescript`, `vitest`, `@cloudflare/vitest-pool-workers`, `@playwright/test`, `esbuild`.
 - [ ] `wrangler.toml` with `main = "src/index.ts"`, `compatibility_date`, bindings: D1 `DB`, KV `SCAN_COUNTERS`, `RATE_LIMIT`, `SESSION_CACHE`, R2 `ASSETS_BUCKET`, vars block. Use `[[d1_databases]]`, `[[kv_namespaces]]`, `[[r2_buckets]]` with `preview_*`/local ids for `wrangler dev`.
-- [ ] LICENSE = MIT (author Caner Dogan, 2026).
+- [ ] LICENSE = MIT (author Can Erdogan, 2026).
 - [ ] Scripts: `dev` (`wrangler dev`), `build:tokens`, `build:client`, `test` (vitest), `test:e2e` (playwright), `migrate:local` (`wrangler d1 migrations apply DB --local`).
 - [ ] **Commit:** `chore: scaffold wrangler + hono project`
 

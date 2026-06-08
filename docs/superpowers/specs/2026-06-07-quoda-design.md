@@ -7,7 +7,7 @@
 
 ## 1. Summary
 
-Quoda is an open-source, self-hostable QR-code platform — a feature-complete clone of qr.io's capability set — built entirely on Cloudflare. Its differentiator and emotional core: **dynamic QR codes whose destination is editable forever, so the printed code never breaks**, backed by scan analytics. The product must *feel* premium (Apple-grade calm minimalism) while converting effectively. Design direction is fixed by `docs/design/DESIGN-GUIDELINE.md` (multi-agent design team output); this spec covers product scope, architecture, data model, and the build/QA workflow.
+Quoda is an open-source, self-hostable QR-code platform built entirely on Cloudflare. Its differentiator and emotional core: **dynamic QR codes whose destination is editable forever, so the printed code never breaks**, backed by scan analytics. The product must *feel* premium (Apple-grade calm minimalism) while converting effectively. Design direction is fixed by `docs/design/DESIGN-GUIDELINE.md` (multi-agent design team output); this spec covers product scope, architecture, data model, and the build/QA workflow.
 
 **North star:** every token, interaction and pixel earns the word _reliable_ — including reliable conversion (time-to-first-QR < 3s).
 
@@ -15,7 +15,7 @@ Quoda is an open-source, self-hostable QR-code platform — a feature-complete c
 
 ### Goals
 - 100% working, locally-runnable on Cloudflare's local stack (`wrangler dev`) with zero external service required for core flows.
-- Feature parity with qr.io: static + dynamic QR, full QR-type set, full visual customization, scan analytics, organization.
+- Complete feature set: static + dynamic QR, full QR-type set, full visual customization, scan analytics, organization.
 - Premium, accessible (WCAG AA), dark-mode-first UI compiled from the design guideline tokens.
 - Complete journey: marketing site → magic-link auth → onboarding → QR Studio → dashboard/analytics.
 - Lightweight open-source DevOps: one `wrangler.toml`, MIT license, optional minimal CI.
@@ -71,7 +71,7 @@ Worker (Hono)
 KV namespaces: `SCAN_COUNTERS` (`qr:<id>:total`, `qr:<id>:<day>`), `RATE_LIMIT`, `SESSION_CACHE`.
 R2 buckets/prefixes: `qr/<id>.svg|png`, `logos/<user>/<hash>`, `pages/<slug>/<asset>`.
 
-## 6. Feature Set (qr.io parity)
+## 6. Feature Set
 
 - **Static QR:** URL, Text, WiFi, Email, Tel, SMS, vCard.
 - **Dynamic QR (editable destination):** all of the above plus rich hosted types — PDF, Menu, Business page, App-store smart link, Social links.
