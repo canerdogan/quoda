@@ -1473,7 +1473,7 @@
 
 @media (min-width: 880px) {
   .hero {
-    grid-template-columns: 1.1fr 0.9fr;
+    grid-template-columns: 1fr minmax(360px, 0.85fr);
     gap: var(--space-64);
   }
 }
@@ -1482,24 +1482,32 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-24);
-  max-width: 18ch;
 }
 
 .hero-title {
   color: var(--color-text-primary);
   margin: 0;
+  /* Calm, confident scale: 40px on phones → 64px (the display-hero token) on
+     desktop. Balanced wrapping so it never stacks one word per line. */
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  text-wrap: balance;
+  max-width: 16ch;
 }
 
 .hero-lead {
-  max-width: 46ch;
+  max-width: 42ch;
   margin: 0;
 }
 
-/* The live generator — the hero's centerpiece. */
+/* The live generator — the hero's centerpiece. A calm vertical card: the
+   perfect scannable QR on top, a full-width URL field below. */
 .generator {
   display: flex;
   flex-direction: column;
-  gap: var(--space-32);
+  gap: var(--space-24);
+  width: 100%;
+  max-width: 420px;
+  margin-inline: auto;
   background: var(--color-surface-1);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-2xl);
@@ -1507,19 +1515,13 @@
   padding: var(--space-32);
 }
 
-@media (min-width: 560px) {
-  .generator {
-    flex-direction: row-reverse;
-    align-items: center;
-  }
-}
-
 .generator-input {
   display: flex;
   flex-direction: column;
-  gap: var(--space-24);
-  flex: 1 1 auto;
+  gap: var(--space-16);
+  width: 100%;
   min-width: 0;
+  order: 2;
 }
 
 .generator-preview {
@@ -1527,7 +1529,8 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-8);
-  flex: 0 0 auto;
+  width: 100%;
+  order: 1;
 }
 
 /* CTA reveal: opacity-only, honoring the 80ms reduced-motion exception. */
