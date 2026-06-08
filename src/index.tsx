@@ -7,6 +7,7 @@ import { pages } from "./routes/pages";
 import { redirect } from "./routes/redirect";
 import { styleguide } from "./routes/styleguide";
 import { previewApi } from "./routes/api/preview";
+import { brandApi } from "./routes/api/brand";
 
 // Auth + app (authed routes guard themselves with requireAuth)
 import { auth } from "./routes/auth";
@@ -35,6 +36,7 @@ app.get("/favicon.ico", (c) => c.redirect("/favicon.svg", 301));
 
 // --- APIs (specific paths) ---
 app.route("/", previewApi); // POST /api/preview
+app.route("/", brandApi); // POST /api/brand (AI Brand Match)
 app.route("/", qrApi); // /api/qr*
 app.route("/", analyticsApi); // /api/qr/:id/analytics
 app.route("/", uploadApi); // POST /api/upload, GET /assets/:key

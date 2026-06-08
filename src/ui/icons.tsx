@@ -23,6 +23,7 @@ export type IconName =
   | "download"
   | "chevron"
   | "close"
+  | "sparkles"
   // QR menu types
   | "url"
   | "text"
@@ -57,6 +58,12 @@ const PATHS: Record<IconName, Child> = {
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,
+  sparkles: (
+    <>
+      <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8L12 3z" />
+      <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14z" />
+    </>
+  ),
   link: (
     <>
       <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
