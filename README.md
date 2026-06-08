@@ -125,4 +125,4 @@ docs/superpowers/              spec + implementation plan
 
 ## License
 
-[MIT](./LICENSE) © 2026 Caner Dogan
+[MIT](./LICENSE) © 2026 Can Erdogan

@@ -4,7 +4,7 @@
   "description": "Open-source, self-hostable QR platform on Cloudflare. Dynamic QR codes that never break + scan analytics.",
   "type": "module",
   "license": "MIT",
-  "author": "Caner Dogan <can@canerdogan.me>",
+  "author": "Can Erdogan <can@canerdogan.me>",
   "scripts": {
     "dev": "npm run build:tokens && npm run build:client && wrangler dev",
     "build:tokens": "node scripts/build-tokens.mjs",
