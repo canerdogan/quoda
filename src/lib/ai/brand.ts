@@ -24,6 +24,8 @@ export interface BrandKit {
   logoDataUrl?: string;
   /** URL of the brand image used (for downstream style/vibe analysis) */
   imageUrl?: string;
+  /** site meta description — what the brand does (for thematic wallpaper motifs) */
+  description?: string;
   palette: { fg: string; bg: string; accent: string };
   title: string;
   source: string;
@@ -35,6 +37,7 @@ interface BrandSignals {
   themeColor?: string;
   iconUrls: string[];
   ogImage?: string;
+  description?: string;
 }
 
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -96,6 +99,15 @@ export function extractBrandSignals(html: string, base: URL): BrandSignals {
     /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image["']/i.exec(html);
   const ogImage = og ? abs(og[1]) ?? undefined : undefined;
 
+  // description: what the brand does (meta description, else og:description) —
+  // used to derive a thematic wallpaper motif.
+  const desc =
+    /<meta[^>]+name=["']description["'][^>]*content=["']([^"']+)["']/i.exec(html) ||
+    /<meta[^>]+content=["']([^"']+)["'][^>]*name=["']description["']/i.exec(html) ||
+    /<meta[^>]+property=["']og:description["'][^>]*content=["']([^"']+)["']/i.exec(html) ||
+    /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:description["']/i.exec(html);
+  const description = desc ? decodeEntities(desc[1].trim()).slice(0, 300) : undefined;
+
   // Rank icons: apple-touch first, then non-.ico, then the rest. Always include
   // the conventional /favicon.ico as a last resort.
   const score = (i: { href: string; rel: string }): number => {
@@ -109,7 +121,7 @@ export function extractBrandSignals(html: string, base: URL): BrandSignals {
   const ranked = icons.sort((a, b) => score(b) - score(a)).map((i) => i.href);
   ranked.push(new URL("/favicon.ico", base).toString());
 
-  return { title, themeColor, iconUrls: [...new Set(ranked)], ogImage };
+  return { title, themeColor, iconUrls: [...new Set(ranked)], ogImage, description };
 }
 
 /** Fetch an image and return it as a data URI if it's a usable raster/svg, else null. */
@@ -241,6 +253,7 @@ export async function brandMatch(env: Bindings, rawUrl: string): Promise<BrandKi
     design,
     logoDataUrl,
     imageUrl,
+    description: signals.description,
     palette: { fg, bg, accent: brandFg && HEX_RE.test(brandFg) ? brandFg : fg },
     title: signals.title || source,
     source,

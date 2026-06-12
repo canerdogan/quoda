@@ -23,10 +23,14 @@ const IMAGE_MODELS = [
 const IMG_W = 768;
 const IMG_H = 1280;
 
-export type WallpaperStyle = "mesh" | "aurora" | "waves" | "minimal";
+// Native text model used to turn a brand's description into a visual scene motif.
+const TEXT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
+
+export type WallpaperStyle = "mesh" | "aurora" | "waves" | "minimal" | "scene";
 export type WallpaperPlacement = "top" | "center" | "bottom";
 
-export const WALLPAPER_STYLES: WallpaperStyle[] = ["mesh", "aurora", "waves", "minimal"];
+export const WALLPAPER_STYLES: WallpaperStyle[] = ["mesh", "scene", "aurora", "waves", "minimal"];
 export const WALLPAPER_PLACEMENTS: WallpaperPlacement[] = ["top", "center", "bottom"];
 
 export interface WallpaperResult {
@@ -52,6 +56,9 @@ const STYLE_PROMPT: Record<WallpaperStyle, string> = {
   aurora: "ethereal aurora light ribbons, luminous glow, deep atmospheric background, bokeh",
   waves: "elegant flowing wave layers, silky liquid curves, satin folds, smooth metallic sheen",
   minimal: "minimalist soft gradient, vast calm negative space, refined, airy, subtle film grain",
+  // Themed/illustrative: a stylized scene evoking what the brand does (motif is
+  // woven into the prompt head), still abstract enough to keep the QR scannable.
+  scene: "rich stylized illustrative scene, depth and atmosphere, dynamic composition, painterly volumetric light, concept-art quality",
 };
 
 /** Premium quality cues appended to every wallpaper prompt. */
@@ -161,10 +168,18 @@ export function buildWallpaperPrompt(
   style: WallpaperStyle,
   placement: WallpaperPlacement,
   vibe?: string,
+  motif?: string,
 ): string {
   const color = hexToName(accent);
+  // The "scene" style leads with the brand's subject motif (what it does), so the
+  // texture is thematic — e.g. a game studio gets neon game worlds, not just a
+  // colour mesh. Abstract styles ignore the motif and stay clean.
+  const head =
+    style === "scene"
+      ? `${color} stylized abstract scene${motif && motif.trim() ? `, themed around ${motif.trim()}` : ""}, full-bleed`
+      : `${color} premium abstract background, full-bleed texture`;
   return [
-    `${color} premium abstract background, full-bleed texture`,
+    head,
     vibe && vibe.trim() ? vibe.trim() : "",
     STYLE_PROMPT[style],
     QUALITY_CUES,
@@ -259,7 +274,7 @@ async function brandVibe(env: Bindings, source: string, imageUrl?: string): Prom
     if (res.ok) {
       const buf = new Uint8Array(await res.arrayBuffer());
       if (buf.length && buf.length <= 300_000) {
-        const out = (await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+        const out = (await env.AI.run(VISION_MODEL, {
           image: [...buf],
           prompt:
             "Describe this brand's VISUAL STYLE as 4-6 short adjectives for an abstract wallpaper (e.g. 'sleek, futuristic, neon, dark'). Reply with ONLY comma-separated adjectives, no sentence.",
@@ -278,6 +293,58 @@ async function brandVibe(env: Bindings, source: string, imageUrl?: string): Prom
     /* non-fatal */
   }
   return vibe;
+}
+
+/**
+ * Turn a brand's title + description into a short visual SCENE MOTIF (what the
+ * brand is about, as paintable nouns) so the "scene" style produces an on-theme
+ * illustration — e.g. a game studio → "neon game worlds, arcade energy". Cached
+ * per domain, best-effort (returns undefined → scene falls back to a stylish
+ * abstract).
+ */
+async function brandMotif(
+  env: Bindings,
+  source: string,
+  title: string,
+  description?: string,
+): Promise<string | undefined> {
+  const cacheKey = `wp:motif:${source}`;
+  try {
+    const cached = await env.SCAN_COUNTERS.get(cacheKey);
+    if (cached !== null) return cached || undefined;
+  } catch {
+    /* miss */
+  }
+  let motif: string | undefined;
+  try {
+    const brief = [title, description].filter(Boolean).join(" — ").slice(0, 400);
+    const out = (await env.AI.run(TEXT_MODEL, {
+      messages: [
+        {
+          role: "system",
+          content:
+            "You generate concise image-generation motifs. Given a brand, output 4-7 words of concrete VISUAL motifs (objects, environments, atmosphere) for an on-brand abstract wallpaper scene. No logos, no text, no brand names, no people. Reply with ONLY a comma-separated list, nothing else.",
+        },
+        { role: "user", content: `Brand: ${brief || source}` },
+      ],
+      max_tokens: 40,
+    })) as { response?: string };
+    const txt = (out?.response ?? "")
+      .replace(/\s+/g, " ")
+      .replace(/^["'\s]*(motifs?:)?\s*/i, "")
+      .replace(/["'.]/g, "")
+      .trim();
+    if (txt && txt.length <= 140 && txt.includes(",")) motif = txt;
+    else if (txt && txt.length <= 80) motif = txt;
+  } catch {
+    /* best-effort */
+  }
+  try {
+    await env.SCAN_COUNTERS.put(cacheKey, motif ?? "", { expirationTtl: 86_400 });
+  } catch {
+    /* non-fatal */
+  }
+  return motif;
 }
 
 export async function generateWallpaper(
@@ -313,7 +380,11 @@ export async function generateWallpaper(
     // matches the brand's aesthetic — the closest these text-to-image models get
     // to using the image as a reference.
     const vibe = await brandVibe(env, kit.source, kit.imageUrl);
-    const prompt = buildWallpaperPrompt(kit.palette.accent, style, placement, vibe);
+    // The "scene" style additionally pulls a subject motif from the brand's
+    // description (what it does) for a thematic, illustrative background.
+    const motif =
+      style === "scene" ? await brandMotif(env, kit.source, kit.title, kit.description) : undefined;
+    const prompt = buildWallpaperPrompt(kit.palette.accent, style, placement, vibe, motif);
     backgroundDataUrl = await generateBackground(env, prompt, WALLPAPER_NEGATIVE);
     if (backgroundDataUrl) {
       try {
