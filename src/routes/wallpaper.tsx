@@ -54,11 +54,23 @@ wallpaper.get("/wallpaper", (c) =>
                 <Input
                   id="wp-url"
                   name="url"
-                  label="Your URL"
+                  label="QR destination"
                   type="url"
                   inputmode="url"
                   autocomplete="url"
-                  placeholder="yoursite.com"
+                  placeholder="linkedin.com/in/you"
+                  hint="Where the code opens when scanned."
+                />
+
+                <Input
+                  id="wp-brand"
+                  name="brandUrl"
+                  label="Style it like (optional)"
+                  type="url"
+                  inputmode="url"
+                  autocomplete="url"
+                  placeholder="gamebyte.ai"
+                  hint="Borrow another brand's look. Leave blank to match the destination."
                 />
 
                 <div class="wp-field">

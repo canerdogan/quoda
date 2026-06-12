@@ -12,11 +12,13 @@ interface WallpaperResponse {
   layout?: { placement: "top" | "center" | "bottom"; qrFraction: number };
   title?: string;
   source?: string;
+  target?: string;
   error?: string;
 }
 
 const root = document;
 const urlInput = root.getElementById("wp-url") as HTMLInputElement | null;
+const brandInput = root.getElementById("wp-brand") as HTMLInputElement | null;
 const genBtn = root.getElementById("wp-generate") as HTMLButtonElement | null;
 const regenBtn = root.getElementById("wp-regen") as HTMLButtonElement | null;
 const downloadBtn = root.getElementById("wp-download") as HTMLButtonElement | null;
@@ -147,9 +149,10 @@ if (urlInput && genBtn && canvas) {
   async function generate() {
     const url = (urlInput!.value || "").trim();
     if (!url) {
-      setStatus("Add a URL first.");
+      setStatus("Add a destination URL first.");
       return;
     }
+    const brandUrl = (brandInput?.value || "").trim();
     genBtn!.disabled = true;
     if (regenBtn) regenBtn.setAttribute("disabled", "");
     setStatus("Painting your wallpaper… this takes a few seconds.");
@@ -157,7 +160,7 @@ if (urlInput && genBtn && canvas) {
       const res = await fetch("/api/wallpaper", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url, style, placement }),
+        body: JSON.stringify({ url, brandUrl, style, placement }),
       });
       if (res.status === 429) {
         setStatus("Busy right now — give it a moment, then try again.");
@@ -170,8 +173,11 @@ if (urlInput && genBtn && canvas) {
       }
       lastSource = data.source || "wallpaper";
       await compose(data);
+      const themed = data.title || data.source || "your site";
       const where = data.aiBackground === false ? " (brand gradient)" : "";
-      setStatus(`Matched to ${data.title || data.source || "your site"}${where} — set it as your wallpaper.`);
+      const decoupled = data.target && data.source && data.target !== data.source;
+      const opens = decoupled ? ` Code opens ${data.target}.` : "";
+      setStatus(`Styled like ${themed}${where}.${opens} Set it as your wallpaper.`);
     } catch {
       setStatus("Couldn't reach the wallpaper service. Check your connection.");
     } finally {
