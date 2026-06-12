@@ -22,6 +22,8 @@ const VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 export interface BrandKit {
   design: QrDesign;
   logoDataUrl?: string;
+  /** URL of the brand image used (for downstream style/vibe analysis) */
+  imageUrl?: string;
   palette: { fg: string; bg: string; accent: string };
   title: string;
   source: string;
@@ -194,11 +196,16 @@ export async function brandMatch(env: Bindings, rawUrl: string): Promise<BrandKi
 
   // 3) centre logo: first icon/image that embeds cleanly
   let logoDataUrl: string | undefined;
+  let imageUrl: string | undefined;
   const candidates = [...signals.iconUrls, ...(signals.ogImage ? [signals.ogImage] : [])];
   for (const c of candidates) {
     logoDataUrl = (await fetchImageDataUrl(c)) ?? undefined;
-    if (logoDataUrl) break;
+    if (logoDataUrl) {
+      imageUrl = c;
+      break;
+    }
   }
+  if (!imageUrl) imageUrl = signals.ogImage ?? candidates[0];
 
   // 4) palette: theme-color first, else vision model on the brand image
   let usedAI = false;
@@ -233,6 +240,7 @@ export async function brandMatch(env: Bindings, rawUrl: string): Promise<BrandKi
   const kit: BrandKit = {
     design,
     logoDataUrl,
+    imageUrl,
     palette: { fg, bg, accent: brandFg && HEX_RE.test(brandFg) ? brandFg : fg },
     title: signals.title || source,
     source,
