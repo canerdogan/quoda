@@ -7,6 +7,7 @@ import {
   gradientFromPalette,
   WALLPAPER_STYLES,
   WALLPAPER_PLACEMENTS,
+  WALLPAPER_NEGATIVE,
 } from "../src/lib/ai/wallpaper";
 
 describe("hexToName", () => {
@@ -21,21 +22,31 @@ describe("hexToName", () => {
 });
 
 describe("buildWallpaperPrompt", () => {
-  it("includes the brand color, style and an empty region, and forbids text/qr", () => {
+  it("includes brand color, style, region, premium cues — and no phone-frame instruction", () => {
     const p = buildWallpaperPrompt("#0A7EA4", "mesh", "bottom");
     expect(p).toContain("teal");
     expect(p).toMatch(/gradient mesh/);
     expect(p).toContain("lower area");
-    expect(p).toMatch(/no text/);
-    expect(p).toMatch(/no qr/i);
+    expect(p).toMatch(/8k|award-winning|cinematic/); // premium quality cues
     // must NOT instruct the model to draw a phone/frame (that leaked a device bezel)
     expect(p).not.toMatch(/phone wallpaper/i);
-    expect(p).toMatch(/no phone/i);
-    expect(p).toMatch(/no frame/i);
+  });
+  it("injects the brand vibe when provided", () => {
+    const p = buildWallpaperPrompt("#0A7EA4", "waves", "center", "sleek, futuristic, neon");
+    expect(p).toContain("sleek, futuristic, neon");
   });
   it("covers every style + placement without throwing", () => {
     for (const s of WALLPAPER_STYLES)
       for (const pl of WALLPAPER_PLACEMENTS) expect(buildWallpaperPrompt("#123456", s, pl).length).toBeGreaterThan(20);
+  });
+});
+
+describe("WALLPAPER_NEGATIVE", () => {
+  it("forbids text, qr, phone and frame artifacts", () => {
+    expect(WALLPAPER_NEGATIVE).toMatch(/text/);
+    expect(WALLPAPER_NEGATIVE).toMatch(/qr code/);
+    expect(WALLPAPER_NEGATIVE).toMatch(/phone/);
+    expect(WALLPAPER_NEGATIVE).toMatch(/frame/);
   });
 });
 

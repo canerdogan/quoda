@@ -45,11 +45,19 @@ export interface WallpaperResult {
 }
 
 const STYLE_PROMPT: Record<WallpaperStyle, string> = {
-  mesh: "soft flowing gradient mesh, smooth blurred color blends",
-  aurora: "dreamy aurora light ribbons, soft glow, deep background",
-  waves: "elegant flowing wave layers, smooth silky curves",
-  minimal: "minimal soft gradient, lots of calm negative space, subtle grain",
+  mesh: "flowing gradient mesh, soft blurred color fields melting together, organic blobs",
+  aurora: "ethereal aurora light ribbons, luminous glow, deep atmospheric background, bokeh",
+  waves: "elegant flowing wave layers, silky liquid curves, satin folds, smooth metallic sheen",
+  minimal: "minimalist soft gradient, vast calm negative space, refined, airy, subtle film grain",
 };
+
+/** Premium quality cues appended to every wallpaper prompt. */
+const QUALITY_CUES =
+  "volumetric soft lighting, layered depth, smooth silky gradients, glossy sheen, fine detail, ultra high quality, 8k, award-winning, cinematic, sophisticated, tasteful";
+
+/** Dedicated negative prompt (Leonardo/SDXL honor this field — keeps it clean). */
+export const WALLPAPER_NEGATIVE =
+  "text, words, letters, typography, watermark, signature, logo, qr code, phone, smartphone, device, screen, ui, app interface, frame, border, mockup, bezel, person, hand, low quality, blurry, noisy, jpeg artifacts, deformed, cluttered, oversaturated";
 
 const REGION_WORD: Record<WallpaperPlacement, string> = {
   top: "upper",
@@ -132,23 +140,30 @@ export function gradientFromPalette(palette: { fg: string; accent: string }): {
   return { from: shadeHex(base, 0.45), via: shadeHex(base, 0.8), to: shadeHex(base, 1.25) };
 }
 
-/** Build the image-generation prompt for a brand wallpaper. Pure + testable. */
+/**
+ * Build the image-generation prompt for a brand wallpaper. Pure + testable.
+ * `vibe` is an optional short brand style descriptor (from the brand image) so
+ * the texture matches the brand's actual aesthetic, not just its color.
+ * Describes a full-bleed texture — NOT a "phone wallpaper", which makes the model
+ * paint a phone device/frame inside the image. Negatives live in WALLPAPER_NEGATIVE.
+ */
 export function buildWallpaperPrompt(
   accent: string,
   style: WallpaperStyle,
   placement: WallpaperPlacement,
+  vibe?: string,
 ): string {
   const color = hexToName(accent);
   return [
-    // Describe a full-bleed texture — NOT a "phone wallpaper", which makes the
-    // model draw a phone device/frame inside the image.
-    `full-bleed abstract background texture, ${color} color palette`,
+    `${color} premium abstract background, full-bleed texture`,
+    vibe && vibe.trim() ? vibe.trim() : "",
     STYLE_PROMPT[style],
-    "fills the entire image edge to edge, seamless, immersive",
-    `calm empty space in the ${REGION_WORD[placement]} area`,
-    "high quality, tasteful, modern",
-    "no text, no words, no letters, no logos, no qr code, no phone, no device, no screen, no frame, no border, no mockup, no bezel",
-  ].join(", ");
+    QUALITY_CUES,
+    "fills the entire frame edge to edge, seamless, immersive, cohesive composition",
+    `calm minimal negative space in the ${REGION_WORD[placement]} area`,
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /** Vertical placement → relative QR size fraction of the wallpaper width. */
@@ -167,14 +182,22 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
+/** Model-specific input. FLUX uses `steps`; Leonardo/SDXL use num_steps + guidance + negative_prompt. */
+function inputFor(model: string, prompt: string, negative: string): Record<string, unknown> {
+  const base = { prompt, width: IMG_W, height: IMG_H };
+  if (model.includes("flux")) return { ...base, steps: 6 };
+  // Leonardo Phoenix/Lucid: more steps + guidance + a real negative prompt = nicer output.
+  return { ...base, num_steps: 25, guidance: 6, negative_prompt: negative };
+}
+
 /** Run one image model and normalize its output (base64 OR binary) to a data URL. */
-async function runImageModel(env: Bindings, model: string, prompt: string): Promise<string | null> {
-  const out = (await env.AI.run(model, {
-    prompt,
-    width: IMG_W,
-    height: IMG_H,
-    steps: 4,
-  })) as unknown;
+async function runImageModel(
+  env: Bindings,
+  model: string,
+  prompt: string,
+  negative: string,
+): Promise<string | null> {
+  const out = (await env.AI.run(model, inputFor(model, prompt, negative))) as unknown;
   // FLUX-style: { image: base64 }
   if (out && typeof (out as { image?: unknown }).image === "string") {
     return `data:image/jpeg;base64,${(out as { image: string }).image}`;
@@ -192,11 +215,11 @@ async function runImageModel(env: Bindings, model: string, prompt: string): Prom
  * Generate a background, trying each model (quality-first) with a couple of
  * retries each — Workers AI image gen occasionally returns a transient error.
  */
-async function generateBackground(env: Bindings, prompt: string): Promise<string | null> {
+async function generateBackground(env: Bindings, prompt: string, negative: string): Promise<string | null> {
   for (const model of IMAGE_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const url = await runImageModel(env, model, prompt);
+        const url = await runImageModel(env, model, prompt, negative);
         if (url) return url;
       } catch (err) {
         console.error(`[wallpaper] ${model} attempt ${attempt + 1} failed:`, err);
@@ -204,6 +227,48 @@ async function generateBackground(env: Bindings, prompt: string): Promise<string
     }
   }
   return null;
+}
+
+/**
+ * Vision-read the brand image into a short style descriptor (best-effort, cached
+ * per domain) so the generated texture matches the brand's actual aesthetic.
+ * Leonardo/Phoenix can't do img2img, so this is how we "use the brand image" —
+ * the model describes it, and that description steers the text-to-image prompt.
+ */
+async function brandVibe(env: Bindings, source: string, imageUrl?: string): Promise<string | undefined> {
+  if (!imageUrl) return undefined;
+  const cacheKey = `wp:vibe:${source}`;
+  try {
+    const cached = await env.SCAN_COUNTERS.get(cacheKey);
+    if (cached !== null) return cached || undefined;
+  } catch {
+    /* miss */
+  }
+  let vibe: string | undefined;
+  try {
+    const res = await fetch(imageUrl);
+    if (res.ok) {
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.length && buf.length <= 300_000) {
+        const out = (await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+          image: [...buf],
+          prompt:
+            "Describe this brand's VISUAL STYLE as 4-6 short adjectives for an abstract wallpaper (e.g. 'sleek, futuristic, neon, dark'). Reply with ONLY comma-separated adjectives, no sentence.",
+          max_tokens: 40,
+        })) as { response?: string };
+        const txt = (out?.response ?? "").replace(/\s+/g, " ").replace(/["'.]/g, "").trim();
+        if (txt && txt.length <= 120) vibe = txt;
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  try {
+    await env.SCAN_COUNTERS.put(cacheKey, vibe ?? "", { expirationTtl: 86_400 });
+  } catch {
+    /* non-fatal */
+  }
+  return vibe;
 }
 
 export async function generateWallpaper(
@@ -223,7 +288,7 @@ export async function generateWallpaper(
 
   // Cache the (expensive) background per domain+style. The version prefix lets us
   // invalidate stale backgrounds when the generation prompt changes.
-  const cacheKey = `wp:v3:${kit.source}:${style}`;
+  const cacheKey = `wp:v4:${kit.source}:${style}`;
   let backgroundDataUrl: string | null = null;
   try {
     backgroundDataUrl = await env.SCAN_COUNTERS.get(cacheKey);
@@ -231,7 +296,12 @@ export async function generateWallpaper(
     /* miss */
   }
   if (!backgroundDataUrl) {
-    backgroundDataUrl = await generateBackground(env, buildWallpaperPrompt(kit.palette.accent, style, placement));
+    // Read the brand's visual style from its image (best-effort) so the texture
+    // matches the brand's aesthetic — the closest these text-to-image models get
+    // to using the image as a reference.
+    const vibe = await brandVibe(env, kit.source, kit.imageUrl);
+    const prompt = buildWallpaperPrompt(kit.palette.accent, style, placement, vibe);
+    backgroundDataUrl = await generateBackground(env, prompt, WALLPAPER_NEGATIVE);
     if (backgroundDataUrl) {
       try {
         await env.SCAN_COUNTERS.put(cacheKey, backgroundDataUrl, { expirationTtl: 86_400 });
