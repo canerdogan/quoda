@@ -1,5 +1,5 @@
 import type { Bindings } from "../../types";
-import { brandMatch } from "./brand";
+import { brandMatch, normalizeUrl } from "./brand";
 import { buildPayload } from "../qr/content";
 import { encodeMatrix } from "../qr/encoder";
 import { renderSvg } from "../qr/render-svg";
@@ -40,7 +40,10 @@ export interface WallpaperResult {
   layout: { placement: WallpaperPlacement; qrFraction: number };
   palette: { fg: string; bg: string; accent: string };
   title: string;
+  /** brand/theme source host the look was derived from (e.g. "gamebyte.ai") */
   source: string;
+  /** host the QR actually points to (e.g. "linkedin.com") — equals source unless decoupled */
+  target: string;
   style: WallpaperStyle;
 }
 
@@ -64,6 +67,12 @@ const REGION_WORD: Record<WallpaperPlacement, string> = {
   center: "center",
   bottom: "lower",
 };
+
+/** Clean display host for a URL (e.g. "linkedin.com"), or the trimmed input if unparseable. */
+export function displayHost(raw: string): string {
+  const u = normalizeUrl(raw);
+  return u ? u.hostname.replace(/^www\./, "") : (raw || "").trim();
+}
 
 /** A coarse color name from a hex, so the image prompt reads naturally. */
 export function hexToName(hex: string): string {
@@ -274,10 +283,14 @@ async function brandVibe(env: Bindings, source: string, imageUrl?: string): Prom
 export async function generateWallpaper(
   env: Bindings,
   rawUrl: string,
-  opts: { style?: WallpaperStyle; placement?: WallpaperPlacement } = {},
+  opts: { style?: WallpaperStyle; placement?: WallpaperPlacement; targetUrl?: string } = {},
 ): Promise<WallpaperResult | null> {
+  // The brand/theme (colours, logo, background) comes from `rawUrl`. The QR can
+  // point somewhere else entirely (`targetUrl`) — e.g. a gamebyte.ai-styled
+  // wallpaper whose code opens your personal LinkedIn. Defaults to rawUrl.
   const kit = await brandMatch(env, rawUrl);
   if (!kit) return null;
+  const destination = (opts.targetUrl ?? "").trim() || rawUrl;
 
   const style: WallpaperStyle = WALLPAPER_STYLES.includes(opts.style as WallpaperStyle)
     ? (opts.style as WallpaperStyle)
@@ -314,10 +327,11 @@ export async function generateWallpaper(
   // the wallpaper never fully fails.
   const aiBackground = !!backgroundDataUrl;
 
-  // The QR is always our programmatic, scannable code (brand-styled design).
+  // The QR is always our programmatic, scannable code (brand-styled design),
+  // encoding the chosen destination (not necessarily the theme source).
   let qrSvg: string;
   try {
-    const matrix = encodeMatrix(buildPayload("url", { url: rawUrl }), kit.design.ecc);
+    const matrix = encodeMatrix(buildPayload("url", { url: destination }), kit.design.ecc);
     qrSvg = renderSvg(matrix, kit.design);
   } catch {
     return null;
@@ -332,6 +346,7 @@ export async function generateWallpaper(
     palette: kit.palette,
     title: kit.title,
     source: kit.source,
+    target: displayHost(destination),
     style,
   };
 }

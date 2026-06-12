@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   hexToName,
+  displayHost,
   buildWallpaperPrompt,
   placementLayout,
   shadeHex,
@@ -18,6 +19,18 @@ describe("hexToName", () => {
   });
   it("falls back for bad input", () => {
     expect(hexToName("nope")).toBe("neutral");
+  });
+});
+
+describe("displayHost", () => {
+  it("returns a clean host for the QR-destination caption", () => {
+    expect(displayHost("https://www.linkedin.com/in/you")).toBe("linkedin.com");
+    expect(displayHost("gamebyte.ai")).toBe("gamebyte.ai");
+    expect(displayHost("HTTPS://Stripe.com/")).toBe("stripe.com");
+  });
+  it("falls back to the trimmed input when unparseable", () => {
+    expect(displayHost("  not a url  ")).toBe("not a url");
+    expect(displayHost("")).toBe("");
   });
 });
 
