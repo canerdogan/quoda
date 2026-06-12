@@ -39,8 +39,8 @@ const PLACEHOLDER_QR_SVG = renderSvg(
 
 const MARKETING_LINKS = [
   { label: "Features", href: "/features" },
+  { label: "Wallpaper", href: "/wallpaper" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Use cases", href: "/use-cases" },
   { label: "Docs", href: "/docs" },
 ];
 

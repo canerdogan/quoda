@@ -3,11 +3,13 @@ import type { Bindings } from "./types";
 
 // Public
 import { marketing } from "./routes/marketing";
+import { wallpaper } from "./routes/wallpaper";
 import { pages } from "./routes/pages";
 import { redirect } from "./routes/redirect";
 import { styleguide } from "./routes/styleguide";
 import { previewApi } from "./routes/api/preview";
 import { brandApi } from "./routes/api/brand";
+import { wallpaperApi } from "./routes/api/wallpaper";
 
 // Auth + app (authed routes guard themselves with requireAuth)
 import { auth } from "./routes/auth";
@@ -37,6 +39,7 @@ app.get("/favicon.ico", (c) => c.redirect("/favicon.svg", 301));
 // --- APIs (specific paths) ---
 app.route("/", previewApi); // POST /api/preview
 app.route("/", brandApi); // POST /api/brand (AI Brand Match)
+app.route("/", wallpaperApi); // POST /api/wallpaper (AI QR Wallpaper)
 app.route("/", qrApi); // /api/qr*
 app.route("/", analyticsApi); // /api/qr/:id/analytics
 app.route("/", uploadApi); // POST /api/upload, GET /assets/:key
@@ -57,6 +60,10 @@ app.route("/", pages); // /p/:slug
 
 // --- Dev styleguide ---
 app.route("/styleguide", styleguide);
+
+
+// --- AI QR wallpaper creator ---
+app.route("/", wallpaper);
 
 // --- Marketing (home + static pages) registered LAST: its "/" is the catch-all home ---
 app.route("/", marketing);
