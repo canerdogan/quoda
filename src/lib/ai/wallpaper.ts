@@ -14,7 +14,12 @@ import { renderSvg } from "../qr/render-svg";
  * region. This module returns the background + the QR SVG + a layout spec.
  */
 
-const IMAGE_MODEL = "@cf/black-forest-labs/flux-1-schnell";
+// Quality-first chain: a refined aesthetic model, then a fast reliable fallback.
+// Both are native Workers AI (gateway-free) and honor portrait width/height.
+const IMAGE_MODELS = [
+  "@cf/leonardo/phoenix-1.0", // most elegant; returns binary
+  "@cf/black-forest-labs/flux-1-schnell", // fast fallback; returns base64
+];
 const IMG_W = 768;
 const IMG_H = 1280;
 
@@ -135,36 +140,67 @@ export function buildWallpaperPrompt(
 ): string {
   const color = hexToName(accent);
   return [
-    `premium abstract phone wallpaper, ${color} color palette`,
+    // Describe a full-bleed texture — NOT a "phone wallpaper", which makes the
+    // model draw a phone device/frame inside the image.
+    `full-bleed abstract background texture, ${color} color palette`,
     STYLE_PROMPT[style],
-    `clean calm empty space in the ${REGION_WORD[placement]} area for a panel`,
-    "high quality, tasteful, modern, no text, no words, no letters, no logos, no qr code",
+    "fills the entire image edge to edge, seamless, immersive",
+    `calm empty space in the ${REGION_WORD[placement]} area`,
+    "high quality, tasteful, modern",
+    "no text, no words, no letters, no logos, no qr code, no phone, no device, no screen, no frame, no border, no mockup, no bezel",
   ].join(", ");
 }
 
 /** Vertical placement → relative QR size fraction of the wallpaper width. */
 export function placementLayout(placement: WallpaperPlacement): { placement: WallpaperPlacement; qrFraction: number } {
-  return { placement, qrFraction: 0.46 };
+  // Prominent enough to scan from the image itself with any reader, not just a
+  // focused phone camera.
+  return { placement, qrFraction: 0.54 };
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+/** Run one image model and normalize its output (base64 OR binary) to a data URL. */
+async function runImageModel(env: Bindings, model: string, prompt: string): Promise<string | null> {
+  const out = (await env.AI.run(model, {
+    prompt,
+    width: IMG_W,
+    height: IMG_H,
+    steps: 4,
+  })) as unknown;
+  // FLUX-style: { image: base64 }
+  if (out && typeof (out as { image?: unknown }).image === "string") {
+    return `data:image/jpeg;base64,${(out as { image: string }).image}`;
+  }
+  // Leonardo/SDXL-style: raw binary (stream / buffer)
+  let bytes: Uint8Array | null = null;
+  if (out instanceof ReadableStream) bytes = new Uint8Array(await new Response(out).arrayBuffer());
+  else if (out instanceof ArrayBuffer) bytes = new Uint8Array(out);
+  else if (out instanceof Uint8Array) bytes = out;
+  if (bytes && bytes.length) return `data:image/jpeg;base64,${bytesToBase64(bytes)}`;
+  return null;
+}
+
+/**
+ * Generate a background, trying each model (quality-first) with a couple of
+ * retries each — Workers AI image gen occasionally returns a transient error.
+ */
 async function generateBackground(env: Bindings, prompt: string): Promise<string | null> {
-  // Workers AI image generation occasionally returns a transient upstream error;
-  // retry a few times before giving up.
-  const ATTEMPTS = 3;
-  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
-    try {
-      const out = (await env.AI.run(IMAGE_MODEL, {
-        prompt,
-        width: IMG_W,
-        height: IMG_H,
-        steps: 4,
-      })) as { image?: string };
-      if (out?.image) {
-        // FLUX returns base64; default container is JPEG.
-        return `data:image/jpeg;base64,${out.image}`;
+  for (const model of IMAGE_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const url = await runImageModel(env, model, prompt);
+        if (url) return url;
+      } catch (err) {
+        console.error(`[wallpaper] ${model} attempt ${attempt + 1} failed:`, err);
       }
-    } catch (err) {
-      if (attempt === ATTEMPTS - 1) console.error("[wallpaper] image gen failed:", err);
     }
   }
   return null;
@@ -185,8 +221,9 @@ export async function generateWallpaper(
     ? (opts.placement as WallpaperPlacement)
     : "center";
 
-  // Cache the (expensive) background per domain+style.
-  const cacheKey = `wp:${kit.source}:${style}`;
+  // Cache the (expensive) background per domain+style. The version prefix lets us
+  // invalidate stale backgrounds when the generation prompt changes.
+  const cacheKey = `wp:v3:${kit.source}:${style}`;
   let backgroundDataUrl: string | null = null;
   try {
     backgroundDataUrl = await env.SCAN_COUNTERS.get(cacheKey);

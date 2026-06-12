@@ -62,6 +62,7 @@ app.route("/", pages); // /p/:slug
 app.route("/styleguide", styleguide);
 
 
+
 // --- AI QR wallpaper creator ---
 app.route("/", wallpaper);
 
