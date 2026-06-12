@@ -5,7 +5,9 @@
 
 interface WallpaperResponse {
   ok?: boolean;
-  backgroundDataUrl?: string;
+  backgroundDataUrl?: string | null;
+  aiBackground?: boolean;
+  gradient?: { from: string; via: string; to: string };
   qrSvg?: string;
   layout?: { placement: "top" | "center" | "bottom"; qrFraction: number };
   title?: string;
@@ -73,16 +75,32 @@ if (urlInput && genBtn && canvas) {
     const W = canvas!.width;
     const H = canvas!.height;
 
-    const [bg, qr] = await Promise.all([
-      loadImage(data.backgroundDataUrl!),
-      loadImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(data.qrSvg!)),
-    ]);
+    const qr = await loadImage(
+      "data:image/svg+xml;charset=utf-8," + encodeURIComponent(data.qrSvg!),
+    );
 
-    // background — cover
-    const scale = Math.max(W / bg.width, H / bg.height);
-    const bw = bg.width * scale,
-      bh = bg.height * scale;
-    ctx.drawImage(bg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+    // background — AI image (cover) or a brand gradient fallback
+    if (data.backgroundDataUrl) {
+      const bg = await loadImage(data.backgroundDataUrl);
+      const scale = Math.max(W / bg.width, H / bg.height);
+      const bw = bg.width * scale,
+        bh = bg.height * scale;
+      ctx.drawImage(bg, (W - bw) / 2, (H - bh) / 2, bw, bh);
+    } else {
+      const g = data.gradient ?? { from: "#063040", via: "#0A7EA4", to: "#3FB6D6" };
+      const grad = ctx.createLinearGradient(0, 0, W, H);
+      grad.addColorStop(0, g.from);
+      grad.addColorStop(0.55, g.via);
+      grad.addColorStop(1, g.to);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+      // a soft radial glow for depth
+      const glow = ctx.createRadialGradient(W * 0.5, H * 0.32, 0, W * 0.5, H * 0.32, W * 0.9);
+      glow.addColorStop(0, "rgba(255,255,255,0.16)");
+      glow.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     // QR card
     const qrSize = Math.round((data.layout?.qrFraction ?? 0.46) * W);
@@ -144,13 +162,14 @@ if (urlInput && genBtn && canvas) {
         return;
       }
       const data = (await res.json()) as WallpaperResponse;
-      if (!res.ok || !data.ok || !data.backgroundDataUrl || !data.qrSvg) {
+      if (!res.ok || !data.ok || !data.qrSvg) {
         setStatus("Couldn't generate that wallpaper — try another URL or style.");
         return;
       }
       lastSource = data.source || "wallpaper";
       await compose(data);
-      setStatus(`Matched to ${data.title || data.source || "your site"} — set it as your wallpaper.`);
+      const where = data.aiBackground === false ? " (brand gradient)" : "";
+      setStatus(`Matched to ${data.title || data.source || "your site"}${where} — set it as your wallpaper.`);
     } catch {
       setStatus("Couldn't reach the wallpaper service. Check your connection.");
     } finally {

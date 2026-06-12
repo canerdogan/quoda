@@ -25,7 +25,12 @@ export const WALLPAPER_STYLES: WallpaperStyle[] = ["mesh", "aurora", "waves", "m
 export const WALLPAPER_PLACEMENTS: WallpaperPlacement[] = ["top", "center", "bottom"];
 
 export interface WallpaperResult {
-  backgroundDataUrl: string;
+  /** AI background; null when image gen was unavailable (client paints the gradient). */
+  backgroundDataUrl: string | null;
+  /** whether backgroundDataUrl came from the image model */
+  aiBackground: boolean;
+  /** always-available brand gradient so the wallpaper never fully fails */
+  gradient: { from: string; via: string; to: string };
   qrSvg: string;
   layout: { placement: WallpaperPlacement; qrFraction: number };
   palette: { fg: string; bg: string; accent: string };
@@ -73,6 +78,55 @@ export function hexToName(hex: string): string {
   return l < 0.35 ? `deep ${base}` : l > 0.7 ? `soft ${base}` : base;
 }
 
+function clampByte(n: number): number {
+  return Math.max(0, Math.min(255, Math.round(n)));
+}
+
+/** Scale a #RRGGBB toward black (<1) or white (>1). Falls back to a teal. */
+export function shadeHex(hex: string, factor: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
+  if (!m) return factor < 1 ? "#063040" : "#3FB6D6";
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 255,
+    g = (n >> 8) & 255,
+    b = n & 255;
+  if (factor >= 1) {
+    // lighten toward white
+    const t = factor - 1;
+    r = r + (255 - r) * t;
+    g = g + (255 - g) * t;
+    b = b + (255 - b) * t;
+  } else {
+    r *= factor;
+    g *= factor;
+    b *= factor;
+  }
+  return "#" + [r, g, b].map((c) => clampByte(c).toString(16).padStart(2, "0")).join("");
+}
+
+function luminance(hex: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
+  if (!m) return 0.5;
+  const n = parseInt(m[1], 16);
+  return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114;
+}
+
+/** A pleasing 3-stop brand gradient (always available, even with no AI image). */
+export function gradientFromPalette(palette: { fg: string; accent: string }): {
+  from: string;
+  via: string;
+  to: string;
+} {
+  // Use the accent unless it's near-white/near-black (poor gradient base) — then
+  // fall back to the ink color, and if that's also flat, to a brand teal.
+  let base = palette.accent;
+  const lum = luminance(base);
+  if (lum > 215 || lum < 18) {
+    base = luminance(palette.fg) > 18 && luminance(palette.fg) < 215 ? palette.fg : "#0A7EA4";
+  }
+  return { from: shadeHex(base, 0.45), via: shadeHex(base, 0.8), to: shadeHex(base, 1.25) };
+}
+
 /** Build the image-generation prompt for a brand wallpaper. Pure + testable. */
 export function buildWallpaperPrompt(
   accent: string,
@@ -103,7 +157,7 @@ async function generateBackground(env: Bindings, prompt: string): Promise<string
         prompt,
         width: IMG_W,
         height: IMG_H,
-        steps: 6,
+        steps: 4,
       })) as { image?: string };
       if (out?.image) {
         // FLUX returns base64; default container is JPEG.
@@ -149,7 +203,9 @@ export async function generateWallpaper(
       }
     }
   }
-  if (!backgroundDataUrl) return null;
+  // If image gen is unavailable, the client paints a brand gradient instead —
+  // the wallpaper never fully fails.
+  const aiBackground = !!backgroundDataUrl;
 
   // The QR is always our programmatic, scannable code (brand-styled design).
   let qrSvg: string;
@@ -162,6 +218,8 @@ export async function generateWallpaper(
 
   return {
     backgroundDataUrl,
+    aiBackground,
+    gradient: gradientFromPalette(kit.palette),
     qrSvg,
     layout: placementLayout(placement),
     palette: kit.palette,
