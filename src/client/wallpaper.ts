@@ -104,7 +104,9 @@ if (urlInput && genBtn && canvas) {
 
     // QR card
     const qrSize = Math.round((data.layout?.qrFraction ?? 0.46) * W);
-    const pad = Math.round(qrSize * 0.09);
+    // Generous white pad = a strong local quiet zone, so the code scans cleanly
+    // even over a busy/bright AI background.
+    const pad = Math.round(qrSize * 0.12);
     const cardSize = qrSize + pad * 2;
     const cx = W / 2;
     const cyFrac = placement === "top" ? 0.3 : placement === "bottom" ? 0.7 : 0.5;

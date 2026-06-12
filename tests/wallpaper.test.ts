@@ -28,6 +28,10 @@ describe("buildWallpaperPrompt", () => {
     expect(p).toContain("lower area");
     expect(p).toMatch(/no text/);
     expect(p).toMatch(/no qr/i);
+    // must NOT instruct the model to draw a phone/frame (that leaked a device bezel)
+    expect(p).not.toMatch(/phone wallpaper/i);
+    expect(p).toMatch(/no phone/i);
+    expect(p).toMatch(/no frame/i);
   });
   it("covers every style + placement without throwing", () => {
     for (const s of WALLPAPER_STYLES)
