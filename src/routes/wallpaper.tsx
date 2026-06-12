@@ -12,6 +12,7 @@ export const wallpaper = new Hono<{ Bindings: Bindings }>();
 
 const STYLES = [
   { id: "mesh", label: "Mesh" },
+  { id: "scene", label: "Scene" },
   { id: "aurora", label: "Aurora" },
   { id: "waves", label: "Waves" },
   { id: "minimal", label: "Minimal" },
@@ -87,6 +88,7 @@ wallpaper.get("/wallpaper", (c) =>
                       </button>
                     ))}
                   </div>
+                  <p class="field-hint">Scene paints an on-brand themed background; the others stay abstract.</p>
                 </div>
 
                 <div class="wp-field">
