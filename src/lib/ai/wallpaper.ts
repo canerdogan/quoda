@@ -14,8 +14,13 @@ import { renderSvg } from "../qr/render-svg";
  * region. This module returns the background + the QR SVG + a layout spec.
  */
 
-// Quality-first chain: a refined aesthetic model, then a fast reliable fallback.
-// Both are native Workers AI (gateway-free) and honor portrait width/height.
+// Primary image generator: fal.ai FLUX.1 [dev] — premium quality, ~5s, honors
+// custom portrait dimensions. Used when FAL_KEY is configured.
+const FAL_IMAGE_MODEL = "fal-ai/flux/dev";
+const FAL_NUM_STEPS = 28;
+const FAL_GUIDANCE = 3.5;
+
+// Fallback chain (native Workers AI, gateway-free) when fal is unavailable.
 const IMAGE_MODELS = [
   "@cf/leonardo/phoenix-1.0", // most elegant; returns binary
   "@cf/black-forest-labs/flux-1-schnell", // fast fallback; returns base64
@@ -236,10 +241,63 @@ async function runImageModel(
 }
 
 /**
- * Generate a background, trying each model (quality-first) with a couple of
- * retries each — Workers AI image gen occasionally returns a transient error.
+ * Generate a background with fal.ai FLUX dev (sync HTTP). Returns a data URL —
+ * fal serves the image from its CDN, so we inline it here to keep it cacheable
+ * in KV and free of cross-origin canvas taint on the client. null on any failure.
+ * (FLUX has no negative-prompt input; the positive prompt carries the intent.)
+ */
+async function falImage(env: Bindings, prompt: string): Promise<string | null> {
+  if (!env.FAL_KEY) return null;
+  try {
+    const res = await fetch(`https://fal.run/${FAL_IMAGE_MODEL}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Key ${env.FAL_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt,
+        image_size: { width: IMG_W, height: IMG_H },
+        num_inference_steps: FAL_NUM_STEPS,
+        guidance_scale: FAL_GUIDANCE,
+        num_images: 1,
+        enable_safety_checker: true,
+        output_format: "jpeg",
+      }),
+    });
+    if (!res.ok) {
+      console.error(`[wallpaper] fal ${res.status}:`, await res.text().catch(() => ""));
+      return null;
+    }
+    const data = (await res.json()) as { images?: { url?: string }[] };
+    const imgUrl = data.images?.[0]?.url;
+    if (!imgUrl) return null;
+    const imgRes = await fetch(imgUrl);
+    if (!imgRes.ok) return null;
+    const bytes = new Uint8Array(await imgRes.arrayBuffer());
+    if (!bytes.length) return null;
+    const mime = (imgRes.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+    return `data:${mime};base64,${bytesToBase64(bytes)}`;
+  } catch (err) {
+    console.error("[wallpaper] fal failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Generate a background: fal.ai first (premium), then native Workers AI as a
+ * fallback — each with a couple of retries for transient errors. Returns null
+ * only if every path fails (the client then paints the brand gradient).
  */
 async function generateBackground(env: Bindings, prompt: string, negative: string): Promise<string | null> {
+  // 1) fal.ai FLUX dev (primary)
+  if (env.FAL_KEY) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const url = await falImage(env, prompt);
+      if (url) return url;
+    }
+  }
+  // 2) Cloudflare Workers AI (fallback)
   for (const model of IMAGE_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -368,7 +426,7 @@ export async function generateWallpaper(
 
   // Cache the (expensive) background per domain+style. The version prefix lets us
   // invalidate stale backgrounds when the generation prompt changes.
-  const cacheKey = `wp:v4:${kit.source}:${style}`;
+  const cacheKey = `wp:v5:${kit.source}:${style}`;
   let backgroundDataUrl: string | null = null;
   try {
     backgroundDataUrl = await env.SCAN_COUNTERS.get(cacheKey);

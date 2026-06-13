@@ -11,6 +11,8 @@ export interface Bindings {
   ASSETS_BUCKET: R2Bucket;
   AI: AIBinding;
   RESEND_API_KEY?: string;
+  /** fal.ai API key — when set, wallpaper backgrounds use fal (FLUX dev); else CF Workers AI. */
+  FAL_KEY?: string;
   APP_URL: string;
 }
 
