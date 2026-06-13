@@ -668,13 +668,17 @@ wrangler r2 bucket create quoda-assets`}</CodeBlock>
               so generated short links and hosted pages resolve correctly. For
               real sign-in emails, add a{" "}
               <code class="code-inline">RESEND_API_KEY</code>; without it, magic
-              links are logged to the console (never silently dropped).
+              links are logged to the console (never silently dropped). For
+              premium AI wallpaper backgrounds, add a{" "}
+              <code class="code-inline">FAL_KEY</code> (fal.ai); without it,
+              backgrounds fall back to Cloudflare Workers AI.
             </p>
             <CodeBlock>{`# wrangler.jsonc -> vars
 "vars": { "APP_URL": "https://your-domain.com" }
 
-# secret (optional — enables real email delivery)
-wrangler secret put RESEND_API_KEY`}</CodeBlock>
+# secrets (optional)
+wrangler secret put RESEND_API_KEY   # real email delivery
+wrangler secret put FAL_KEY          # premium fal.ai wallpaper backgrounds`}</CodeBlock>
             <p class="t-body text-secondary">
               For local dev, copy{" "}
               <code class="code-inline">.dev.vars.example</code> to{" "}
