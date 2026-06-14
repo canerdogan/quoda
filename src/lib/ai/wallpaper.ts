@@ -14,11 +14,13 @@ import { renderSvg } from "../qr/render-svg";
  * region. This module returns the background + the QR SVG + a layout spec.
  */
 
-// Primary image generator: fal.ai FLUX.1 [dev] — premium quality, ~5s, honors
-// custom portrait dimensions. Used when FAL_KEY is configured.
-const FAL_IMAGE_MODEL = "fal-ai/flux/dev";
-const FAL_NUM_STEPS = 28;
-const FAL_GUIDANCE = 3.5;
+// Primary image generator: fal.ai FLUX.2 — the latest, most refined BFL model
+// (premium silky/cinematic output, ~3s, honors custom portrait dimensions).
+// Used when FAL_KEY is configured. Rendered larger than the CF fallback for a
+// crisper composite (canvas is 1080x1800).
+const FAL_IMAGE_MODEL = "fal-ai/flux-2";
+const FAL_W = 864;
+const FAL_H = 1440;
 
 // Fallback chain (native Workers AI, gateway-free) when fal is unavailable.
 const IMAGE_MODELS = [
@@ -241,7 +243,7 @@ async function runImageModel(
 }
 
 /**
- * Generate a background with fal.ai FLUX dev (sync HTTP). Returns a data URL —
+ * Generate a background with fal.ai FLUX.2 (sync HTTP). Returns a data URL —
  * fal serves the image from its CDN, so we inline it here to keep it cacheable
  * in KV and free of cross-origin canvas taint on the client. null on any failure.
  * (FLUX has no negative-prompt input; the positive prompt carries the intent.)
@@ -257,11 +259,8 @@ async function falImage(env: Bindings, prompt: string): Promise<string | null> {
       },
       body: JSON.stringify({
         prompt,
-        image_size: { width: IMG_W, height: IMG_H },
-        num_inference_steps: FAL_NUM_STEPS,
-        guidance_scale: FAL_GUIDANCE,
+        image_size: { width: FAL_W, height: FAL_H },
         num_images: 1,
-        enable_safety_checker: true,
         output_format: "jpeg",
       }),
     });
@@ -290,7 +289,7 @@ async function falImage(env: Bindings, prompt: string): Promise<string | null> {
  * only if every path fails (the client then paints the brand gradient).
  */
 async function generateBackground(env: Bindings, prompt: string, negative: string): Promise<string | null> {
-  // 1) fal.ai FLUX dev (primary)
+  // 1) fal.ai FLUX.2 (primary)
   if (env.FAL_KEY) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const url = await falImage(env, prompt);
@@ -426,7 +425,7 @@ export async function generateWallpaper(
 
   // Cache the (expensive) background per domain+style. The version prefix lets us
   // invalidate stale backgrounds when the generation prompt changes.
-  const cacheKey = `wp:v5:${kit.source}:${style}`;
+  const cacheKey = `wp:v6:${kit.source}:${style}`;
   let backgroundDataUrl: string | null = null;
   try {
     backgroundDataUrl = await env.SCAN_COUNTERS.get(cacheKey);
