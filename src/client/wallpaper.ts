@@ -251,12 +251,20 @@ if (urlInput && genBtn && canvas) {
     ctx.drawImage(qr, cx - qrSize / 2, cy - qrSize / 2, qrSize, qrSize);
     return size;
   }
+  /** A white quiet-zone panel + QR, inset inside a coloured/frosted outer card. */
+  function whiteInset(ctx: Ctx, qr: HTMLImageElement, cx: number, cy: number, qs: number, padFrac: number, r: number) {
+    const inset = qs + Math.round(qs * padFrac);
+    roundRect(ctx, cx - inset / 2, cy - inset / 2, inset, inset, r);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.drawImage(qr, cx - qs / 2, cy - qs / 2, qs, qs);
+  }
   function tagWords(tagline?: string): string[] {
     return (tagline || "").split(/\s*[·.|]\s*/).filter(Boolean);
   }
-  function drawTagline(ctx: Ctx, W: number, y: number, words: string[], a: string, b: string, o?: { size?: number; align?: "center" }) {
+  function drawTagline(ctx: Ctx, W: number, y: number, words: string[], a: string, b: string) {
     if (!words.length) return;
-    const fs = o?.size ?? Math.round(W * 0.0265);
+    const fs = Math.round(W * 0.0265);
     ctx.save();
     ctx.font = `800 ${fs}px Inter, system-ui, sans-serif`;
     ctx.textBaseline = "middle";
@@ -495,11 +503,7 @@ if (urlInput && genBtn && canvas) {
     ctx.strokeStyle = p;
     ctx.stroke();
     ctx.restore();
-    const inset = qs + Math.round(qs * 0.08);
-    roundRect(ctx, cx - inset / 2, cy - inset / 2, inset, inset, 8);
-    ctx.fillStyle = "#fff";
-    ctx.fill();
-    ctx.drawImage(qr, cx - qs / 2, cy - qs / 2, qs, qs);
+    whiteInset(ctx, qr, cx, cy, qs, 0.08, 8);
     // tagline in translucent band
     const words = tagWords(data.tagline);
     if (words.length) {
@@ -619,11 +623,7 @@ if (urlInput && genBtn && canvas) {
     ctx.lineTo(cx + size / 2, cy);
     ctx.stroke();
     ctx.restore();
-    const inset = qs + Math.round(qs * 0.06);
-    roundRect(ctx, cx - inset / 2, cy - inset / 2, inset, inset, 10);
-    ctx.fillStyle = "#fff";
-    ctx.fill();
-    ctx.drawImage(qr, cx - qs / 2, cy - qs / 2, qs, qs);
+    whiteInset(ctx, qr, cx, cy, qs, 0.06, 10);
     drawTagline(ctx, W, H - Math.round(botH * 0.12), tagWords(data.tagline), "#ffffff", p);
   }
 

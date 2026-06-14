@@ -34,12 +34,6 @@ const IMG_H = 1280;
 const TEXT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const VISION_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 
-export type WallpaperStyle = "mesh" | "aurora" | "waves" | "minimal" | "scene";
-export type WallpaperPlacement = "top" | "center" | "bottom";
-
-export const WALLPAPER_STYLES: WallpaperStyle[] = ["mesh", "scene", "aurora", "waves", "minimal"];
-export const WALLPAPER_PLACEMENTS: WallpaperPlacement[] = ["top", "center", "bottom"];
-
 /**
  * Creative art directions — each renders a strikingly different poster so brands
  * don't all look alike. A runtime "creative director" picks one per brand (or the
@@ -94,7 +88,6 @@ export interface WallpaperResult {
   /** always-available brand gradient so the wallpaper never fully fails */
   gradient: { from: string; via: string; to: string };
   qrSvg: string;
-  layout: { placement: WallpaperPlacement; qrFraction: number };
   palette: { fg: string; bg: string; accent: string };
   title: string;
   /** brand/theme source host the look was derived from (e.g. "gamebyte.ai") */
@@ -118,19 +111,7 @@ export interface WallpaperResult {
   dark: boolean;
 }
 
-// All styles render on a DARK, luxe canvas (the brand colour appears as glow), so
-// the composited logo, QR card and tagline read crisply — a meeting-ready poster.
-const STYLE_PROMPT: Record<WallpaperStyle, string> = {
-  mesh: "soft glowing gradient mesh, blurred luminous colour fields drifting over deep black",
-  aurora: "ethereal aurora light ribbons glowing over deep black, luminous bokeh haze",
-  waves: "elegant glowing wave curves and silky rim-lit folds flowing over black",
-  minimal: "a few delicate glowing curves over a vast black canvas, immense calm empty space",
-  // Themed/illustrative: a dark, atmospheric scene evoking what the brand does
-  // (motif is woven into the prompt head), still calm enough for the overlay.
-  scene: "dark atmospheric illustrative scene, moody depth, cinematic rim light, concept-art quality",
-};
-
-/** Premium quality cues appended to every wallpaper prompt. */
+/** Premium quality cues appended to every direction's background prompt. */
 const QUALITY_CUES =
   "elegant rim light, smooth glowing accents, generous dark negative space, subtle bokeh, minimal, refined, volumetric lighting, ultra high quality, 8k, award-winning, cinematic, sophisticated, tasteful, premium";
 
@@ -196,13 +177,6 @@ export function shadeHex(hex: string, factor: number): string {
   return "#" + [r, g, b].map((c) => clampByte(c).toString(16).padStart(2, "0")).join("");
 }
 
-function luminance(hex: string): number {
-  const m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
-  if (!m) return 0.5;
-  const n = parseInt(m[1], 16);
-  return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114;
-}
-
 /**
  * A vivid brand glow colour that pops on a dark background. Boosts dark accents,
  * and falls back to a tasteful cool blue when the brand is essentially greyscale.
@@ -257,47 +231,6 @@ export function gradientFromPalette(palette: { fg: string; accent: string }): {
   // Near-black canvas with a faint brand tint in the middle; the client adds a
   // soft radial brand glow on top so it matches the AI dark-luxe look.
   return { from: "#0d0d12", via: shadeHex(glowColor(palette.accent), 0.32), to: "#070709" };
-}
-
-/**
- * Build the image-generation prompt for a brand wallpaper. Pure + testable.
- * `vibe` is an optional short brand style descriptor (from the brand image) so
- * the texture matches the brand's actual aesthetic, not just its color.
- * Describes a full-bleed texture — NOT a "phone wallpaper", which makes the model
- * paint a phone device/frame inside the image. Negatives live in WALLPAPER_NEGATIVE.
- */
-export function buildWallpaperPrompt(
-  accent: string,
-  style: WallpaperStyle,
-  placement: WallpaperPlacement,
-  vibe?: string,
-  motif?: string,
-): string {
-  const color = hexToName(accent);
-  // Every wallpaper is a DARK luxe backdrop with the brand colour as glow. The
-  // "scene" style additionally leads with the brand's subject motif (what it
-  // does) so a game studio gets a moody game world, not just a glow.
-  const head =
-    style === "scene"
-      ? `premium dark luxe wallpaper, deep near-black background, atmospheric ${color} glow${motif && motif.trim() ? `, themed around ${motif.trim()}` : ""}`
-      : `premium dark luxe wallpaper, deep near-black background with soft glowing ${color} light`;
-  return [
-    head,
-    vibe && vibe.trim() ? vibe.trim() : "",
-    STYLE_PROMPT[style],
-    QUALITY_CUES,
-    "full-bleed, seamless, cohesive composition",
-    `calm empty space toward the center for an overlaid logo and code`,
-  ]
-    .filter(Boolean)
-    .join(", ");
-}
-
-/** Vertical placement → relative QR size fraction of the wallpaper width. */
-export function placementLayout(placement: WallpaperPlacement): { placement: WallpaperPlacement; qrFraction: number } {
-  // Prominent enough to scan from the image itself with any reader, not just a
-  // focused phone camera.
-  return { placement, qrFraction: 0.54 };
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -721,7 +654,6 @@ export async function generateWallpaper(
     aiBackground,
     gradient: gradientFromPalette(kit.palette),
     qrSvg,
-    layout: placementLayout("center"),
     palette: kit.palette,
     title: kit.title,
     source: kit.source,

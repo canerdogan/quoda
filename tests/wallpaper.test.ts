@@ -7,12 +7,8 @@ import {
   glowColor,
   directionFromKeywords,
   WALLPAPER_DIRECTIONS,
-  buildWallpaperPrompt,
-  placementLayout,
   shadeHex,
   gradientFromPalette,
-  WALLPAPER_STYLES,
-  WALLPAPER_PLACEMENTS,
   WALLPAPER_NEGATIVE,
 } from "../src/lib/ai/wallpaper";
 
@@ -36,36 +32,6 @@ describe("displayHost", () => {
   it("falls back to the trimmed input when unparseable", () => {
     expect(displayHost("  not a url  ")).toBe("not a url");
     expect(displayHost("")).toBe("");
-  });
-});
-
-describe("buildWallpaperPrompt", () => {
-  it("is a dark luxe brand backdrop with style + premium cues — no phone-frame instruction", () => {
-    const p = buildWallpaperPrompt("#0A7EA4", "mesh", "center");
-    expect(p).toContain("teal");
-    expect(p).toMatch(/gradient mesh/);
-    expect(p).toMatch(/dark luxe|near-black/); // dark poster backdrop
-    expect(p).toMatch(/8k|award-winning|cinematic/); // premium quality cues
-    // must NOT instruct the model to draw a phone/frame (that leaked a device bezel)
-    expect(p).not.toMatch(/phone wallpaper/i);
-  });
-  it("injects the brand vibe when provided", () => {
-    const p = buildWallpaperPrompt("#0A7EA4", "waves", "center", "sleek, futuristic, neon");
-    expect(p).toContain("sleek, futuristic, neon");
-  });
-  it("weaves the subject motif into the 'scene' style", () => {
-    const p = buildWallpaperPrompt("#0A7EA4", "scene", "bottom", undefined, "neon game worlds, arcade energy");
-    expect(p).toContain("neon game worlds, arcade energy");
-    expect(p).toMatch(/scene/i);
-  });
-  it("ignores the motif for abstract styles", () => {
-    const p = buildWallpaperPrompt("#0A7EA4", "mesh", "center", undefined, "neon game worlds");
-    expect(p).not.toContain("neon game worlds");
-    expect(p).toMatch(/dark luxe/);
-  });
-  it("covers every style + placement without throwing", () => {
-    for (const s of WALLPAPER_STYLES)
-      for (const pl of WALLPAPER_PLACEMENTS) expect(buildWallpaperPrompt("#123456", s, pl).length).toBeGreaterThan(20);
   });
 });
 
@@ -137,14 +103,5 @@ describe("glowColor", () => {
     expect(glowColor("#0D0D0F").toLowerCase()).toBe("#5b8cff");
     // a dark saturated accent is lifted brighter than it started
     expect(parseInt(glowColor("#220a00").slice(1), 16)).toBeGreaterThan(0x220a00);
-  });
-});
-
-describe("placementLayout", () => {
-  it("returns a usable qr fraction", () => {
-    const l = placementLayout("center");
-    expect(l.placement).toBe("center");
-    expect(l.qrFraction).toBeGreaterThan(0.3);
-    expect(l.qrFraction).toBeLessThan(0.6);
   });
 });
