@@ -56,31 +56,38 @@ export interface WallpaperResult {
   /** host the QR actually points to (e.g. "linkedin.com") — equals source unless decoupled */
   target: string;
   style: WallpaperStyle;
+  // --- poster overlay (composited crisply by the client; never AI-drawn) ---
+  /** brand mark (data URL) for the top of the poster, if available */
+  logo?: string;
+  /** brand name shown as the wordmark (e.g. "onGame") */
+  wordmark: string;
+  /** short brand subtitle under the wordmark (e.g. "AI-powered game creation") */
+  subtitle?: string;
+  /** punchy footer tagline, "WORD · WORD · WORD" (omitted if unavailable) */
+  tagline?: string;
+  /** vivid brand glow colour used for accents on the dark poster */
+  glow: string;
 }
 
+// All styles render on a DARK, luxe canvas (the brand colour appears as glow), so
+// the composited logo, QR card and tagline read crisply — a meeting-ready poster.
 const STYLE_PROMPT: Record<WallpaperStyle, string> = {
-  mesh: "flowing gradient mesh, soft blurred color fields melting together, organic blobs",
-  aurora: "ethereal aurora light ribbons, luminous glow, deep atmospheric background, bokeh",
-  waves: "elegant flowing wave layers, silky liquid curves, satin folds, smooth metallic sheen",
-  minimal: "minimalist soft gradient, vast calm negative space, refined, airy, subtle film grain",
-  // Themed/illustrative: a stylized scene evoking what the brand does (motif is
-  // woven into the prompt head), still abstract enough to keep the QR scannable.
-  scene: "rich stylized illustrative scene, depth and atmosphere, dynamic composition, painterly volumetric light, concept-art quality",
+  mesh: "soft glowing gradient mesh, blurred luminous colour fields drifting over deep black",
+  aurora: "ethereal aurora light ribbons glowing over deep black, luminous bokeh haze",
+  waves: "elegant glowing wave curves and silky rim-lit folds flowing over black",
+  minimal: "a few delicate glowing curves over a vast black canvas, immense calm empty space",
+  // Themed/illustrative: a dark, atmospheric scene evoking what the brand does
+  // (motif is woven into the prompt head), still calm enough for the overlay.
+  scene: "dark atmospheric illustrative scene, moody depth, cinematic rim light, concept-art quality",
 };
 
 /** Premium quality cues appended to every wallpaper prompt. */
 const QUALITY_CUES =
-  "volumetric soft lighting, layered depth, smooth silky gradients, glossy sheen, fine detail, ultra high quality, 8k, award-winning, cinematic, sophisticated, tasteful";
+  "elegant rim light, smooth glowing accents, generous dark negative space, subtle bokeh, minimal, refined, volumetric lighting, ultra high quality, 8k, award-winning, cinematic, sophisticated, tasteful, premium";
 
 /** Dedicated negative prompt (Leonardo/SDXL honor this field — keeps it clean). */
 export const WALLPAPER_NEGATIVE =
   "text, words, letters, typography, watermark, signature, logo, qr code, phone, smartphone, device, screen, ui, app interface, frame, border, mockup, bezel, person, hand, low quality, blurry, noisy, jpeg artifacts, deformed, cluttered, oversaturated";
-
-const REGION_WORD: Record<WallpaperPlacement, string> = {
-  top: "upper",
-  center: "center",
-  bottom: "lower",
-};
 
 /** Clean display host for a URL (e.g. "linkedin.com"), or the trimmed input if unparseable. */
 export function displayHost(raw: string): string {
@@ -147,20 +154,60 @@ function luminance(hex: string): number {
   return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114;
 }
 
-/** A pleasing 3-stop brand gradient (always available, even with no AI image). */
+/**
+ * A vivid brand glow colour that pops on a dark background. Boosts dark accents,
+ * and falls back to a tasteful cool blue when the brand is essentially greyscale.
+ */
+export function glowColor(accent: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((accent || "").trim());
+  if (!m) return "#5B8CFF";
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 255,
+    g = (n >> 8) & 255,
+    b = n & 255;
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  const sat = max === 0 ? 0 : (max - min) / max;
+  if (sat < 0.15) return "#5B8CFF"; // greyscale brand → cool default glow
+  if (max < 150) {
+    // dark accent → scale up so it actually glows on black, keeping its hue
+    const f = 150 / Math.max(max, 1);
+    r *= f;
+    g *= f;
+    b *= f;
+  }
+  return "#" + [r, g, b].map((c) => clampByte(c).toString(16).padStart(2, "0")).join("");
+}
+
+/** The brand name (wordmark) from the page title, else the host's main label. */
+export function brandName(title: string, source: string): string {
+  const t = (title || "").trim();
+  if (t) {
+    const first = t.split(/\s*[|–—·:]\s*|\s+-\s+|\s*[•]\s*/)[0].trim();
+    if (first.length >= 2 && first.length <= 22) return first;
+  }
+  const label = (source || "").split(".")[0];
+  return label ? label.charAt(0).toUpperCase() + label.slice(1) : t || source || "";
+}
+
+/** A short subtitle from the brand description (first clause, capped). */
+export function subtitleFrom(description?: string): string {
+  let d = (description || "").replace(/\s+/g, " ").trim();
+  if (!d) return "";
+  d = d.split(/(?:[.|•·]| [–—-] )/)[0].trim();
+  if (d.length > 42) d = d.slice(0, 42).replace(/\s+\S*$/, "").trim();
+  return d;
+}
+
+/** A dark, luxe brand gradient (always available, even with no AI image). */
 export function gradientFromPalette(palette: { fg: string; accent: string }): {
   from: string;
   via: string;
   to: string;
 } {
-  // Use the accent unless it's near-white/near-black (poor gradient base) — then
-  // fall back to the ink color, and if that's also flat, to a brand teal.
-  let base = palette.accent;
-  const lum = luminance(base);
-  if (lum > 215 || lum < 18) {
-    base = luminance(palette.fg) > 18 && luminance(palette.fg) < 215 ? palette.fg : "#0A7EA4";
-  }
-  return { from: shadeHex(base, 0.45), via: shadeHex(base, 0.8), to: shadeHex(base, 1.25) };
+  // Near-black canvas with a faint brand tint in the middle; the client adds a
+  // soft radial brand glow on top so it matches the AI dark-luxe look.
+  return { from: "#0d0d12", via: shadeHex(glowColor(palette.accent), 0.32), to: "#070709" };
 }
 
 /**
@@ -178,20 +225,20 @@ export function buildWallpaperPrompt(
   motif?: string,
 ): string {
   const color = hexToName(accent);
-  // The "scene" style leads with the brand's subject motif (what it does), so the
-  // texture is thematic — e.g. a game studio gets neon game worlds, not just a
-  // colour mesh. Abstract styles ignore the motif and stay clean.
+  // Every wallpaper is a DARK luxe backdrop with the brand colour as glow. The
+  // "scene" style additionally leads with the brand's subject motif (what it
+  // does) so a game studio gets a moody game world, not just a glow.
   const head =
     style === "scene"
-      ? `${color} stylized abstract scene${motif && motif.trim() ? `, themed around ${motif.trim()}` : ""}, full-bleed`
-      : `${color} premium abstract background, full-bleed texture`;
+      ? `premium dark luxe wallpaper, deep near-black background, atmospheric ${color} glow${motif && motif.trim() ? `, themed around ${motif.trim()}` : ""}`
+      : `premium dark luxe wallpaper, deep near-black background with soft glowing ${color} light`;
   return [
     head,
     vibe && vibe.trim() ? vibe.trim() : "",
     STYLE_PROMPT[style],
     QUALITY_CUES,
-    "fills the entire frame edge to edge, seamless, immersive, cohesive composition",
-    `calm minimal negative space in the ${REGION_WORD[placement]} area`,
+    "full-bleed, seamless, cohesive composition",
+    `calm empty space toward the center for an overlaid logo and code`,
   ]
     .filter(Boolean)
     .join(", ");
@@ -404,6 +451,56 @@ async function brandMotif(
   return motif;
 }
 
+/**
+ * A punchy 3-word brand tagline for the poster footer (e.g. "IMAGINE · BUILD ·
+ * PLAY"). Generated from the brand, cached per domain, best-effort. Returns a
+ * normalized "WORD · WORD · WORD" string, or undefined (footer is then omitted).
+ */
+async function brandTagline(
+  env: Bindings,
+  source: string,
+  name: string,
+  description?: string,
+): Promise<string | undefined> {
+  const cacheKey = `wp:tag:${source}`;
+  try {
+    const cached = await env.SCAN_COUNTERS.get(cacheKey);
+    if (cached !== null) return cached || undefined;
+  } catch {
+    /* miss */
+  }
+  let tagline: string | undefined;
+  try {
+    const brief = [name, description].filter(Boolean).join(" — ").slice(0, 300);
+    const out = (await env.AI.run(TEXT_MODEL, {
+      messages: [
+        {
+          role: "system",
+          content:
+            "You write punchy 3-word brand taglines, each word a single imperative or noun, like 'IMAGINE. BUILD. PLAY.' or 'DESIGN. SHIP. SCALE.' or 'SCAN. CONNECT. GROW.'. Reply with ONLY three single uppercase words separated by ' . ', nothing else.",
+        },
+        { role: "user", content: `Brand: ${brief || source}` },
+      ],
+      max_tokens: 24,
+    })) as { response?: string };
+    // Keep only A-Z words; take up to 3; require at least 2 for a real tagline.
+    const words = (out?.response ?? "")
+      .toUpperCase()
+      .split(/[^A-Z]+/)
+      .filter((w) => w.length >= 2 && w.length <= 12)
+      .slice(0, 3);
+    if (words.length >= 2) tagline = words.join(" · ");
+  } catch {
+    /* best-effort */
+  }
+  try {
+    await env.SCAN_COUNTERS.put(cacheKey, tagline ?? "", { expirationTtl: 86_400 });
+  } catch {
+    /* non-fatal */
+  }
+  return tagline;
+}
+
 export async function generateWallpaper(
   env: Bindings,
   rawUrl: string,
@@ -425,7 +522,7 @@ export async function generateWallpaper(
 
   // Cache the (expensive) background per domain+style. The version prefix lets us
   // invalidate stale backgrounds when the generation prompt changes.
-  const cacheKey = `wp:v6:${kit.source}:${style}`;
+  const cacheKey = `wp:v7:${kit.source}:${style}`;
   let backgroundDataUrl: string | null = null;
   try {
     backgroundDataUrl = await env.SCAN_COUNTERS.get(cacheKey);
@@ -465,6 +562,20 @@ export async function generateWallpaper(
     return null;
   }
 
+  // Poster overlay text — crisp, brand-aligned, composited by the client (never
+  // AI-drawn, so spelling and the logo are always correct).
+  const wordmark = brandName(kit.title, kit.source);
+  let subtitle = subtitleFrom(kit.description);
+  // Drop a redundant leading "Brand is a/the …" so the subtitle doesn't echo the
+  // wordmark. Word-wise so "is an" is fully removed (not left as a stray "n").
+  if (subtitle && wordmark && subtitle.toLowerCase().startsWith(wordmark.toLowerCase() + " ")) {
+    const filler = new Set(["is", "are", "a", "an", "the", "your", "—", "–", "-", ":"]);
+    const words = subtitle.slice(wordmark.length).trim().split(/\s+/);
+    while (words.length > 1 && filler.has(words[0].toLowerCase())) words.shift();
+    subtitle = words.join(" ");
+  }
+  const tagline = await brandTagline(env, kit.source, wordmark, kit.description);
+
   return {
     backgroundDataUrl,
     aiBackground,
@@ -476,5 +587,10 @@ export async function generateWallpaper(
     source: kit.source,
     target: displayHost(destination),
     style,
+    logo: kit.logoDataUrl,
+    wordmark,
+    subtitle: subtitle || undefined,
+    tagline,
+    glow: glowColor(kit.palette.accent),
   };
 }
