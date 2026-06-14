@@ -11,11 +11,12 @@ import { Icon } from "../ui/icons";
 export const wallpaper = new Hono<{ Bindings: Bindings }>();
 
 const STYLES = [
-  { id: "mesh", label: "Mesh" },
-  { id: "scene", label: "Scene" },
-  { id: "aurora", label: "Aurora" },
-  { id: "waves", label: "Waves" },
-  { id: "minimal", label: "Minimal" },
+  { id: "auto", label: "Auto" },
+  { id: "signal", label: "Signal" },
+  { id: "ember", label: "Ember" },
+  { id: "neon", label: "Neon" },
+  { id: "editorial", label: "Editorial" },
+  { id: "terrain", label: "Terrain" },
 ];
 const NAV_LINKS = [
   { label: "Features", href: "/features" },
@@ -70,8 +71,8 @@ wallpaper.get("/wallpaper", (c) =>
                 />
 
                 <div class="wp-field">
-                  <span class="field-label">Style</span>
-                  <div class="wp-chips" role="group" aria-label="Background style">
+                  <span class="field-label">Art direction</span>
+                  <div class="wp-chips" role="group" aria-label="Art direction">
                     {STYLES.map((s, i) => (
                       <button
                         type="button"
@@ -83,7 +84,7 @@ wallpaper.get("/wallpaper", (c) =>
                       </button>
                     ))}
                   </div>
-                  <p class="field-hint">Scene paints an on-brand themed background; the others stay abstract.</p>
+                  <p class="field-hint">Auto lets a creative director pick a direction to fit the brand — or force one.</p>
                 </div>
 
                 <Button id="wp-generate" size="lg" block iconLeft={<Icon name="sparkles" />}>

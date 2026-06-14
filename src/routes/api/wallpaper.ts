@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import type { Bindings } from "../../types";
 import { generateWallpaper } from "../../lib/ai/wallpaper";
-import type { WallpaperStyle, WallpaperPlacement } from "../../lib/ai/wallpaper";
 
 export const wallpaperApi = new Hono<{ Bindings: Bindings }>();
 
@@ -34,13 +33,16 @@ async function withinRateLimit(env: Bindings, ip: string): Promise<boolean> {
  *   url      — where the QR points (required).
  *   brandUrl — optional: a different site to borrow the look from. When omitted,
  *              the wallpaper is themed from `url` itself (the original behaviour).
+ *   style    — optional art-direction override ("signal"|"ember"|"neon"|
+ *              "editorial"|"terrain"); anything else (e.g. "auto") lets the
+ *              creative director choose per brand.
  */
 wallpaperApi.post("/api/wallpaper", async (c) => {
   if (!(await withinRateLimit(c.env, clientIp(c.req.raw)))) {
     return c.json({ ok: false, error: "rate_limited" }, 429);
   }
 
-  let body: { url?: string; brandUrl?: string; style?: string; placement?: string };
+  let body: { url?: string; brandUrl?: string; style?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -54,8 +56,7 @@ wallpaperApi.post("/api/wallpaper", async (c) => {
   let result;
   try {
     result = await generateWallpaper(c.env, brandUrl, {
-      style: body.style as WallpaperStyle | undefined,
-      placement: body.placement as WallpaperPlacement | undefined,
+      style: typeof body.style === "string" ? body.style : undefined,
       targetUrl: url,
     });
   } catch (err) {

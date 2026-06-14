@@ -40,6 +40,52 @@ export type WallpaperPlacement = "top" | "center" | "bottom";
 export const WALLPAPER_STYLES: WallpaperStyle[] = ["mesh", "scene", "aurora", "waves", "minimal"];
 export const WALLPAPER_PLACEMENTS: WallpaperPlacement[] = ["top", "center", "bottom"];
 
+/**
+ * Creative art directions — each renders a strikingly different poster so brands
+ * don't all look alike. A runtime "creative director" picks one per brand (or the
+ * user overrides). The client has a distinct render pipeline per direction.
+ */
+export type WallpaperDirection = "signal" | "ember" | "neon" | "editorial" | "terrain";
+export const WALLPAPER_DIRECTIONS: WallpaperDirection[] = [
+  "signal",
+  "ember",
+  "neon",
+  "editorial",
+  "terrain",
+];
+
+/** Whether each direction's background is dark (light = editorial). */
+const DIRECTION_DARK: Record<WallpaperDirection, boolean> = {
+  signal: true,
+  ember: true,
+  neon: true,
+  editorial: false,
+  terrain: true,
+};
+
+/** Per-direction background prompt template. {color}/{motif}/{concept} are filled. */
+const DIRECTION_BG: Record<WallpaperDirection, string> = {
+  signal:
+    "dark {color} technical blueprint background, faint glowing isometric grid, deep space atmosphere, subtle circuit-trace geometry, {concept}, cinematic matte, minimal",
+  ember:
+    "rich warm {color} gradient background, painterly soft bokeh light, textured paper grain, golden-hour amber and shadow tones, {concept}, cozy, organic",
+  neon:
+    "ultra dark background, vivid neon {color} light streaks and glow halos, cyberpunk geometry, electric night atmosphere, {concept}, cinematic",
+  editorial:
+    "clean {color}-tinted paper texture background, soft high-key gradient, subtle linen grain, editorial luxury, vast calm space, {concept}, minimal",
+  terrain:
+    "epic wide-angle {motif} landscape, {color} atmospheric haze, dramatic cinematic lighting, painterly depth, {concept}, calm open sky in the upper third, immersive",
+};
+
+/** Keyword → direction fallback when the LLM creative director is unavailable. */
+const DIRECTION_KEYWORDS: [RegExp, WallpaperDirection][] = [
+  [/fintech|saas|dev|developer|security|payment|b2b|enterprise|cloud|data|api|infra|software/i, "signal"],
+  [/coffee|food|craft|wellness|artisan|boutique|natural|organic|bakery|restaurant|cozy|tea/i, "ember"],
+  [/gam(e|ing)|esport|stream|arcade|entertainment|youth|neon|music|night|play|toy/i, "neon"],
+  [/luxury|law|legal|consult|architect|premium|wealth|fashion|editorial|estate agency|jewel/i, "editorial"],
+  [/travel|real estate|outdoor|adventure|space|explore|nature|tour|map|3d|ar\b|vr\b|world/i, "terrain"],
+];
+
 export interface WallpaperResult {
   /** AI background; null when image gen was unavailable (client paints the gradient). */
   backgroundDataUrl: string | null;
@@ -55,7 +101,6 @@ export interface WallpaperResult {
   source: string;
   /** host the QR actually points to (e.g. "linkedin.com") — equals source unless decoupled */
   target: string;
-  style: WallpaperStyle;
   // --- poster overlay (composited crisply by the client; never AI-drawn) ---
   /** brand mark (data URL) for the top of the poster, if available */
   logo?: string;
@@ -67,6 +112,10 @@ export interface WallpaperResult {
   tagline?: string;
   /** vivid brand glow colour used for accents on the dark poster */
   glow: string;
+  /** chosen creative art direction (drives the client's render pipeline) */
+  direction: WallpaperDirection;
+  /** whether the background/composition is dark (false = light editorial) */
+  dark: boolean;
 }
 
 // All styles render on a DARK, luxe canvas (the brand colour appears as glow), so
@@ -501,10 +550,101 @@ async function brandTagline(
   return tagline;
 }
 
+/** Pick a direction by keyword from the brand's vibe + description (LLM fallback). */
+export function directionFromKeywords(text: string): WallpaperDirection {
+  for (const [re, dir] of DIRECTION_KEYWORDS) if (re.test(text)) return dir;
+  return "signal";
+}
+
+/**
+ * The creative-director step: choose ONE art direction for this brand and a short
+ * bespoke background concept, so each brand's poster looks custom — not templated.
+ * Honors an explicit user override; otherwise a native text model decides (cached
+ * per domain), falling back to keyword rules. Returns the resolved direction, the
+ * filled FLUX background prompt, and whether the background is dark.
+ */
+async function resolveDirection(
+  env: Bindings,
+  source: string,
+  override: string | undefined,
+  signals: { name: string; description?: string; vibe?: string; motif?: string; accent: string },
+): Promise<{ direction: WallpaperDirection; fluxPrompt: string; dark: boolean }> {
+  let direction = WALLPAPER_DIRECTIONS.includes(override as WallpaperDirection)
+    ? (override as WallpaperDirection)
+    : undefined;
+  let concept = "";
+
+  if (!direction) {
+    const cacheKey = `wp:cd:v1:${source}`;
+    try {
+      const cached = await env.SCAN_COUNTERS.get(cacheKey);
+      if (cached) {
+        const j = JSON.parse(cached) as { direction?: string; concept?: string };
+        if (WALLPAPER_DIRECTIONS.includes(j.direction as WallpaperDirection)) {
+          direction = j.direction as WallpaperDirection;
+          concept = j.concept || "";
+        }
+      }
+    } catch {
+      /* miss */
+    }
+    if (!direction) {
+      const brief = [signals.name, signals.description, signals.vibe].filter(Boolean).join(" — ").slice(0, 400);
+      try {
+        const out = (await env.AI.run(TEXT_MODEL, {
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are an art director choosing a poster style for a brand. Pick ONE direction:\n" +
+                "- signal: fintech, SaaS, dev tools, security, B2B, precise/technical\n" +
+                "- ember: food, coffee, craft, wellness, warm/artisanal\n" +
+                "- neon: gaming, esports, entertainment, music, bold/energetic\n" +
+                "- editorial: luxury, law, fashion, consulting, premium/minimal\n" +
+                "- terrain: travel, real estate, outdoor, spatial, immersive/scenic\n" +
+                'Reply ONLY compact JSON: {"direction":"<one>","concept":"3-6 word visual background concept for this brand"}.',
+            },
+            { role: "user", content: `Brand: ${brief || source}` },
+          ],
+          max_tokens: 60,
+        })) as { response?: string };
+        const m = /\{[\s\S]*\}/.exec(out?.response ?? "");
+        if (m) {
+          const j = JSON.parse(m[0]) as { direction?: string; concept?: string };
+          if (WALLPAPER_DIRECTIONS.includes(j.direction as WallpaperDirection)) {
+            direction = j.direction as WallpaperDirection;
+            concept = (j.concept || "").replace(/["']/g, "").trim().slice(0, 60);
+          }
+        }
+      } catch {
+        /* fall through to keywords */
+      }
+      if (!direction) direction = directionFromKeywords(`${signals.vibe ?? ""} ${signals.description ?? ""}`);
+      try {
+        await env.SCAN_COUNTERS.put(cacheKey, JSON.stringify({ direction, concept }), {
+          expirationTtl: 86_400,
+        });
+      } catch {
+        /* non-fatal */
+      }
+    }
+  }
+
+  if (!concept) concept = signals.motif || signals.vibe || "";
+  const fluxPrompt =
+    DIRECTION_BG[direction]
+      .replace("{color}", hexToName(signals.accent))
+      .replace("{motif}", signals.motif || "abstract forms")
+      .replace("{concept}", concept) +
+    ", " +
+    QUALITY_CUES;
+  return { direction, fluxPrompt, dark: DIRECTION_DARK[direction] };
+}
+
 export async function generateWallpaper(
   env: Bindings,
   rawUrl: string,
-  opts: { style?: WallpaperStyle; placement?: WallpaperPlacement; targetUrl?: string } = {},
+  opts: { style?: string; targetUrl?: string } = {},
 ): Promise<WallpaperResult | null> {
   // The brand/theme (colours, logo, background) comes from `rawUrl`. The QR can
   // point somewhere else entirely (`targetUrl`) — e.g. a gamebyte.ai-styled
@@ -513,16 +653,39 @@ export async function generateWallpaper(
   if (!kit) return null;
   const destination = (opts.targetUrl ?? "").trim() || rawUrl;
 
-  const style: WallpaperStyle = WALLPAPER_STYLES.includes(opts.style as WallpaperStyle)
-    ? (opts.style as WallpaperStyle)
-    : "mesh";
-  const placement: WallpaperPlacement = WALLPAPER_PLACEMENTS.includes(opts.placement as WallpaperPlacement)
-    ? (opts.placement as WallpaperPlacement)
-    : "center";
+  // Poster overlay text — crisp, brand-aligned, composited by the client (never
+  // AI-drawn, so spelling and the logo are always correct).
+  const wordmark = brandName(kit.title, kit.source);
+  let subtitle = subtitleFrom(kit.description);
+  // Drop a redundant leading "Brand is a/the …" so the subtitle doesn't echo the
+  // wordmark. Word-wise so "is an" is fully removed (not left as a stray "n").
+  if (subtitle && wordmark && subtitle.toLowerCase().startsWith(wordmark.toLowerCase() + " ")) {
+    const filler = new Set(["is", "are", "a", "an", "the", "your", "—", "–", "-", ":"]);
+    const words = subtitle.slice(wordmark.length).trim().split(/\s+/);
+    while (words.length > 1 && filler.has(words[0].toLowerCase())) words.shift();
+    subtitle = words.join(" ");
+  }
 
-  // Cache the (expensive) background per domain+style. The version prefix lets us
-  // invalidate stale backgrounds when the generation prompt changes.
-  const cacheKey = `wp:v7:${kit.source}:${style}`;
+  // Brand signals (best-effort, cached). vibe + motif feed the creative director.
+  const [vibe, motif] = await Promise.all([
+    brandVibe(env, kit.source, kit.imageUrl),
+    brandMotif(env, kit.source, kit.title, kit.description),
+  ]);
+  // The creative director picks a unique art direction per brand; the footer
+  // tagline is independent, so resolve both in parallel.
+  const [cd, tagline] = await Promise.all([
+    resolveDirection(env, kit.source, opts.style, {
+      name: wordmark,
+      description: kit.description,
+      vibe,
+      motif,
+      accent: kit.palette.accent,
+    }),
+    brandTagline(env, kit.source, wordmark, kit.description),
+  ]);
+
+  // Cache the (expensive) background per domain + direction.
+  const cacheKey = `wp:v8:${kit.source}:${cd.direction}`;
   let backgroundDataUrl: string | null = null;
   try {
     backgroundDataUrl = await env.SCAN_COUNTERS.get(cacheKey);
@@ -530,16 +693,7 @@ export async function generateWallpaper(
     /* miss */
   }
   if (!backgroundDataUrl) {
-    // Read the brand's visual style from its image (best-effort) so the texture
-    // matches the brand's aesthetic — the closest these text-to-image models get
-    // to using the image as a reference.
-    const vibe = await brandVibe(env, kit.source, kit.imageUrl);
-    // The "scene" style additionally pulls a subject motif from the brand's
-    // description (what it does) for a thematic, illustrative background.
-    const motif =
-      style === "scene" ? await brandMotif(env, kit.source, kit.title, kit.description) : undefined;
-    const prompt = buildWallpaperPrompt(kit.palette.accent, style, placement, vibe, motif);
-    backgroundDataUrl = await generateBackground(env, prompt, WALLPAPER_NEGATIVE);
+    backgroundDataUrl = await generateBackground(env, cd.fluxPrompt, WALLPAPER_NEGATIVE);
     if (backgroundDataUrl) {
       try {
         await env.SCAN_COUNTERS.put(cacheKey, backgroundDataUrl, { expirationTtl: 86_400 });
@@ -562,35 +716,22 @@ export async function generateWallpaper(
     return null;
   }
 
-  // Poster overlay text — crisp, brand-aligned, composited by the client (never
-  // AI-drawn, so spelling and the logo are always correct).
-  const wordmark = brandName(kit.title, kit.source);
-  let subtitle = subtitleFrom(kit.description);
-  // Drop a redundant leading "Brand is a/the …" so the subtitle doesn't echo the
-  // wordmark. Word-wise so "is an" is fully removed (not left as a stray "n").
-  if (subtitle && wordmark && subtitle.toLowerCase().startsWith(wordmark.toLowerCase() + " ")) {
-    const filler = new Set(["is", "are", "a", "an", "the", "your", "—", "–", "-", ":"]);
-    const words = subtitle.slice(wordmark.length).trim().split(/\s+/);
-    while (words.length > 1 && filler.has(words[0].toLowerCase())) words.shift();
-    subtitle = words.join(" ");
-  }
-  const tagline = await brandTagline(env, kit.source, wordmark, kit.description);
-
   return {
     backgroundDataUrl,
     aiBackground,
     gradient: gradientFromPalette(kit.palette),
     qrSvg,
-    layout: placementLayout(placement),
+    layout: placementLayout("center"),
     palette: kit.palette,
     title: kit.title,
     source: kit.source,
     target: displayHost(destination),
-    style,
     logo: kit.logoDataUrl,
     wordmark,
     subtitle: subtitle || undefined,
     tagline,
     glow: glowColor(kit.palette.accent),
+    direction: cd.direction,
+    dark: cd.dark,
   };
 }
