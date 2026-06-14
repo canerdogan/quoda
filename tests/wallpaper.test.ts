@@ -5,6 +5,8 @@ import {
   brandName,
   subtitleFrom,
   glowColor,
+  directionFromKeywords,
+  WALLPAPER_DIRECTIONS,
   buildWallpaperPrompt,
   placementLayout,
   shadeHex,
@@ -111,6 +113,20 @@ describe("subtitleFrom", () => {
     expect(subtitleFrom("AI-Powered Game Creation Platform. Build fast.")).toBe("AI-Powered Game Creation Platform");
     expect(subtitleFrom("")).toBe("");
     expect(subtitleFrom("A".repeat(60)).length).toBeLessThanOrEqual(42);
+  });
+});
+
+describe("directionFromKeywords", () => {
+  it("maps brand vibe/industry to an art direction", () => {
+    expect(directionFromKeywords("a fintech payment platform")).toBe("signal");
+    expect(directionFromKeywords("artisan coffee roastery, warm")).toBe("ember");
+    expect(directionFromKeywords("indie game studio, esports")).toBe("neon");
+    expect(directionFromKeywords("luxury law firm, premium")).toBe("editorial");
+    expect(directionFromKeywords("travel and outdoor adventure")).toBe("terrain");
+  });
+  it("falls back to signal and only returns known directions", () => {
+    expect(directionFromKeywords("zzz nothing here")).toBe("signal");
+    expect(WALLPAPER_DIRECTIONS).toContain(directionFromKeywords("random brand"));
   });
 });
 
