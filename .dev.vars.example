@@ -4,7 +4,7 @@
 # Worker console with a [DEV MAGIC LINK] banner (zero-setup local auth).
 RESEND_API_KEY=
 
-# fal.ai API key for premium AI wallpaper backgrounds (FLUX dev). If unset,
+# fal.ai API key for premium AI wallpaper backgrounds (FLUX.2). If unset,
 # backgrounds fall back to Cloudflare Workers AI, then a brand gradient.
 FAL_KEY=
 
