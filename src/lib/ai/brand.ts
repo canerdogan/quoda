@@ -182,8 +182,8 @@ export async function brandMatch(env: Bindings, rawUrl: string): Promise<BrandKi
   if (!url) return null;
   const source = url.hostname.replace(/^www\./, "");
 
-  // 1) cache by host
-  const cacheKey = `brand:${source}`;
+  // 1) cache by host (versioned so signal/extraction changes take effect)
+  const cacheKey = `brand:v2:${source}`;
   try {
     const cached = await env.SCAN_COUNTERS.get(cacheKey);
     if (cached) return JSON.parse(cached) as BrandKit;
@@ -195,7 +195,10 @@ export async function brandMatch(env: Bindings, rawUrl: string): Promise<BrandKi
   let signals: BrandSignals = { title: source, iconUrls: [new URL("/favicon.ico", url).toString()] };
   try {
     const res = await fetch(url.toString(), {
-      headers: { "user-agent": "QuodaBrandMatch/1.0 (+https://quoda.codebyte.dev)" },
+      headers: {
+        "user-agent": "QuodaBrandMatch/1.0 (+https://quoda.codebyte.dev)",
+        "accept-language": "en-US,en;q=0.9",
+      },
       redirect: "follow",
     });
     if (res.ok && (res.headers.get("content-type") || "").includes("text/html")) {

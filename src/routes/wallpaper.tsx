@@ -17,12 +17,6 @@ const STYLES = [
   { id: "waves", label: "Waves" },
   { id: "minimal", label: "Minimal" },
 ];
-const PLACEMENTS = [
-  { id: "top", label: "Top" },
-  { id: "center", label: "Center" },
-  { id: "bottom", label: "Bottom" },
-];
-
 const NAV_LINKS = [
   { label: "Features", href: "/features" },
   { label: "Wallpaper", href: "/wallpaper", active: true },
@@ -44,8 +38,9 @@ wallpaper.get("/wallpaper", (c) =>
             <header class="wp-head">
               <h1 class="t-display-md">QR wallpaper</h1>
               <p class="t-body-lg text-secondary wp-sub">
-                Paste a link. AI paints a background in its brand's colours and Quoda
-                drops a real, scannable code on top — ready to set as your phone wallpaper.
+                Paste a link. AI paints an on-brand background, and Quoda composes a
+                meeting-ready poster — brand logo, a real scannable code, and a tagline —
+                straight onto your phone wallpaper.
               </p>
             </header>
 
@@ -89,22 +84,6 @@ wallpaper.get("/wallpaper", (c) =>
                     ))}
                   </div>
                   <p class="field-hint">Scene paints an on-brand themed background; the others stay abstract.</p>
-                </div>
-
-                <div class="wp-field">
-                  <span class="field-label">QR position</span>
-                  <div class="wp-chips" role="group" aria-label="QR position">
-                    {PLACEMENTS.map((p) => (
-                      <button
-                        type="button"
-                        class={`wp-chip${p.id === "center" ? " wp-chip-on" : ""}`}
-                        data-wp-place={p.id}
-                        aria-pressed={p.id === "center" ? "true" : "false"}
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 <Button id="wp-generate" size="lg" block iconLeft={<Icon name="sparkles" />}>
