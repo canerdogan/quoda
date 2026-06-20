@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json"
   },
   "dependencies": {
-    "hono": "^4.6.14",
+    "hono": "^4.12.25",
     "qrcode-generator": "^1.4.4"
   },
   "devDependencies": {
